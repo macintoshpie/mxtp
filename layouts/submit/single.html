@@ -1,0 +1,12 @@
+{{ define "main" }}
+{{ .Content }}
+<form action="/api/mixtapes/" 
+      method="POST"
+      accept-charset="UTF-8">
+
+  <input type="url" name="fullname" placeholder="url">
+  
+  <button type="submit">Send</button>
+    
+</form>
+{{ end }}

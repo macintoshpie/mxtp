@@ -1,0 +1,28 @@
+baseURL = "http://example.org/"
+languageCode = "en-us"
+title = "mxtp"
+
+[permalinks]
+  mixtapes = "/:filename/"
+
+# See https://feathericons.com/
+# The value of pre is the icon name
+[menu]
+  [[menu.main]]
+    name = "Home"
+    pre = "home"
+    url = "/"
+    weight = 1
+  [[menu.main]]
+    name = "Mixtapes"
+    pre = "music"
+    url = "/mixtapes/"
+    weight = 1
+  [[menu.main]]
+    name = "Submit"
+    pre = "edit"
+    url = "/submit/"
+    weight = 2
+
+[params]
+  homeText = "mixtape league"
