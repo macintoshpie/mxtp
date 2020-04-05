@@ -1,7 +1,7 @@
 # functions to build
-go_apps = bin/hello
+go_apps = bin/functions/hello
 
-bin/%: functions/%.go
+bin/functions/%: functions/%.go
 	go build -o $@ $<
 
 build: hugo test $(go_apps)
