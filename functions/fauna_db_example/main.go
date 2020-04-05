@@ -1,4 +1,4 @@
-package main
+package fauna_db_example
 
 import (
 	"os"
@@ -9,6 +9,13 @@ import (
 )
 
 func FaunaDbExampleHandler(request events.APIGatewayProxyRequest) (*events.APIGatewayProxyResponse, error) {
+	if os.Getenv("MXTP_TESTING") == "true" {
+		return &events.APIGatewayProxyResponse{
+			StatusCode: 200,
+			Body:       "Finished",
+		}, nil
+	}
+
 	secret := os.Getenv("FAUNA_DB_SECRET")
 	if secret == "" {
 		panic("FAUNA_DB_SECRET environment variable missing")
@@ -19,7 +26,7 @@ func FaunaDbExampleHandler(request events.APIGatewayProxyRequest) (*events.APIGa
 	adminClient := f.NewFaunaClient(secret, endpoint)
 	dbName := "learn-fauna-go"
 
-	res, err := adminClient.Query(
+	_, err := adminClient.Query(
 		f.If(
 			f.Exists(f.Database(dbName)),
 			true,
@@ -37,5 +44,5 @@ func FaunaDbExampleHandler(request events.APIGatewayProxyRequest) (*events.APIGa
 
 func main() {
 	// Make the handler available for Remote Procedure Call by AWS Lambda
-	lambda.Start(HelloHandler)
+	lambda.Start(FaunaDbExampleHandler)
 }

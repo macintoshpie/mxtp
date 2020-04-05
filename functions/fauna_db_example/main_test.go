@@ -1,13 +1,14 @@
-package main
+package fauna_db_example
 
 import (
+	"os"
 	"testing"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/stretchr/testify/require"
 )
 
-func TestHelloHandler(t *testing.T) {
+func TestFaunaDbExampleHandler(t *testing.T) {
 	tests := []struct {
 		request events.APIGatewayProxyRequest
 		expect  string
@@ -16,14 +17,15 @@ func TestHelloHandler(t *testing.T) {
 		{
 			// Test that the handler responds with the correct response
 			// when a valid name is provided in the HTTP body
-			request: events.APIGatewayProxyRequest{Body: "Paul"},
-			expect:  "Hello, Paul",
+			request: events.APIGatewayProxyRequest{Body: ""},
+			expect:  "Finished",
 			err:     nil,
 		},
 	}
 
+	os.Setenv("MXTP_TESTING", "true")
 	for _, test := range tests {
-		response, err := HelloHandler(test.request)
+		response, err := FaunaDbExampleHandler(test.request)
 		require.IsType(t, test.err, err)
 		require.Equal(t, test.expect, response.Body)
 	}
