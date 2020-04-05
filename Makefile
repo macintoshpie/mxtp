@@ -1,5 +1,9 @@
-build:
-	hugo
-	mkdir -p functions
-	go get ./go-src/...
-	go build -o functions/hello ./go-src/...
+go_apps = bin/hello
+
+bin/%: functions/%.go
+	go build -o $@ $<
+
+build: test $(go_apps)
+
+test:
+	cd functions && go test
