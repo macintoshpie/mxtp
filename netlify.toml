@@ -1,5 +1,5 @@
 [build]
-  command = "make build && ls && ls ./functions/ && ls ./functions/bin/"
+  command = "make build && ls && ls ./functions/ && ls ./functions/bin/ && cd functions/bin && pwd"
   functions = "./functions/bin"
   publish = "public"
 [build.environment]
