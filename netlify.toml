@@ -1,6 +1,6 @@
 [build]
-  command = "make build && ls && ls ./functions/ && ls ./functions/bin/ && cd functions/bin && pwd && ls /opt/build/repo/functions && echo 123 && ls /opt/build/repo/functions/bin"
-  functions = "functions/bin"
+  command = "make build"
+  functions = "bin/functions"
   publish = "public"
 [build.environment]
   GO_IMPORT_PATH = "github.com/macintoshpie/mxtp"

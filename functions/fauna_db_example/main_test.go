@@ -1,4 +1,4 @@
-package fauna_db_example
+package main
 
 import (
 	"os"
