@@ -35,7 +35,7 @@ func leaguesHandler(parameters map[string]string, request events.APIGatewayProxy
 }
 
 func JockeyHandler(request events.APIGatewayProxyRequest) (*events.APIGatewayProxyResponse, error) {
-	b := bouncer.New("/.netlify/functions")
+	b := bouncer.New("/.netlify/functions/jockey")
 	b.Handle("/leagues/{leagueName}", leaguesHandler)
 
 	return b.Route(request)
