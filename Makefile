@@ -1,5 +1,5 @@
 # functions to build
-go_apps = bin/functions/hello bin/functions/fauna_db_example
+go_apps = bin/functions/hello bin/functions/leagues
 
 ./bin/functions/%: functions/%/main.go
 	cd $(<D) && go test .
