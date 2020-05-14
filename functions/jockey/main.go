@@ -5,10 +5,11 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/macintoshpie/mxtp-fx/bouncer"
 	"github.com/macintoshpie/mxtp-fx/mxtpdb"
 )
 
-func LeaguesHandler(request events.APIGatewayProxyRequest) (*events.APIGatewayProxyResponse, error) {
+func leaguesHandler(parameters map[string]string, request events.APIGatewayProxyRequest) (*events.APIGatewayProxyResponse, error) {
 	err, db := mxtpdb.New()
 	if err != nil {
 		return &events.APIGatewayProxyResponse{
@@ -29,10 +30,17 @@ func LeaguesHandler(request events.APIGatewayProxyRequest) (*events.APIGatewayPr
 
 	return &events.APIGatewayProxyResponse{
 		StatusCode: 200,
-		Body:       "The request:  " + fmt.Sprintf("%+v\n", request) + fmt.Sprintf("\n\n%v, %v", league, themes),
+		Body:       fmt.Sprintf("%v\n%v", league, themes),
 	}, nil
 }
 
+func JockeyHandler(request events.APIGatewayProxyRequest) (*events.APIGatewayProxyResponse, error) {
+	b := bouncer.New("/.netlify/functions")
+	b.Handle("/leagues/{leagueName}", leaguesHandler)
+
+	return b.Route(request)
+}
+
 func main() {
-	lambda.Start(LeaguesHandler)
+	lambda.Start(JockeyHandler)
 }
