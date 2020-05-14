@@ -1,5 +1,5 @@
 # functions to build
-go_apps = bin/functions/hello bin/functions/leagues
+go_apps = bin/functions/hello bin/functions/jockey
 
 ./bin/functions/%: functions/%/main.go
 	cd $(<D) && go test .
