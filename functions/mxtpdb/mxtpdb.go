@@ -102,7 +102,7 @@ func (item *MxtpItem) toSubmission() (*Submission, error) {
 	}
 
 	return &Submission{
-		UserId:  item.UserId,
+		UserId:  splitId[1],
 		SongUrl: item.SongUrl,
 		Votes:   item.Votes,
 	}, nil
