@@ -157,12 +157,12 @@ func (db *DB) GetThemeAndSubmissions(leagueName, themeId string) (*Theme, []Subm
 	return theme, submissions, nil
 }
 
-func (db *DB) PutSubmission(leagueName, themeId string, submission Submission) error {
+func (db *DB) PutSubmission(leagueName, themeId, userId string, submission Submission) error {
 	item := MxtpItem{
-		PK:      fmt.Sprintf("theme#%v#user#%v", themeId, submission.UserId),
-		SK:      fmt.Sprintf("user#%v", submission.UserId),
+		PK:      fmt.Sprintf("theme#%v#user#%v", themeId, userId),
+		SK:      fmt.Sprintf("user#%v", userId),
 		GSI1PK:  fmt.Sprintf("league#%v#theme#%v", leagueName, themeId),
-		GSI1SK:  fmt.Sprintf("user#%v", submission.UserId),
+		GSI1SK:  fmt.Sprintf("user#%v", userId),
 		SongUrl: submission.SongUrl,
 		Votes:   submission.Votes,
 	}

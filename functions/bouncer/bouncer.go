@@ -14,10 +14,10 @@ const (
 	Post = "POST"
 )
 
-type apiHandler func(map[string]string, events.APIGatewayProxyRequest) *events.APIGatewayProxyResponse
+type ApiHandler func(map[string]string, events.APIGatewayProxyRequest) *events.APIGatewayProxyResponse
 
 type handlerNode struct {
-	handler       *apiHandler
+	handler       *ApiHandler
 	subnodes      map[string]handlerNode
 	parameterName string
 }
@@ -40,7 +40,7 @@ func New(basePath string) *Bouncer {
 	}
 }
 
-func (h *handlerNode) update(path []string, handler apiHandler) {
+func (h *handlerNode) update(path []string, handler ApiHandler) {
 	if len(path) == 0 {
 		h.handler = &handler
 		return
@@ -66,7 +66,7 @@ func (h *handlerNode) update(path []string, handler apiHandler) {
 	}
 }
 
-func (h *handlerNode) get(path string) (*apiHandler, map[string]string) {
+func (h *handlerNode) get(path string) (*ApiHandler, map[string]string) {
 	pathElements := strings.Split(path, "/")
 	parameters := make(map[string]string)
 	currNode := h
@@ -85,7 +85,7 @@ func (h *handlerNode) get(path string) (*apiHandler, map[string]string) {
 	return nil, nil
 }
 
-func (b *Bouncer) Handle(method Method, pattern string, handler apiHandler) {
+func (b *Bouncer) Handle(method Method, pattern string, handler ApiHandler) {
 	// FIXME: for now just prepend the path with the base path
 	path := strings.Split(b.BasePath+pattern, "/")
 	switch method {
@@ -99,7 +99,7 @@ func (b *Bouncer) Handle(method Method, pattern string, handler apiHandler) {
 }
 
 func (b *Bouncer) Route(req events.APIGatewayProxyRequest) (*events.APIGatewayProxyResponse, error) {
-	var handler *apiHandler
+	var handler *ApiHandler
 	var parameters map[string]string
 	switch req.HTTPMethod {
 	case Get:
