@@ -58,7 +58,11 @@ func (response *jsonResponse) toAPIGatewayProxyResponse() *events.APIGatewayProx
 func authMiddleware(handler bouncer.ApiHandler) bouncer.ApiHandler {
 	return func(parameters map[string]string, request events.APIGatewayProxyRequest) *events.APIGatewayProxyResponse {
 		authHeader := strings.TrimSpace(request.Headers["authorization"])
-		authHeaderDecodedBytes, err := base64.StdEncoding.DecodeString(authHeader)
+		authParts := strings.Fields(authHeader)
+		if len(authParts) != 2 || strings.ToLower(authParts[0]) != "basic" {
+			return handler(parameters, request)
+		}
+		authHeaderDecodedBytes, err := base64.StdEncoding.DecodeString(authParts[1])
 		if err != nil {
 			fmt.Println("ERROR: failed to decode authorization header: ", err.Error())
 			return handler(parameters, request)
