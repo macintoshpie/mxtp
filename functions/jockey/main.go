@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -9,34 +10,118 @@ import (
 	"github.com/macintoshpie/mxtp-fx/mxtpdb"
 )
 
-func leaguesHandler(parameters map[string]string, request events.APIGatewayProxyRequest) (*events.APIGatewayProxyResponse, error) {
-	err, db := mxtpdb.New()
-	if err != nil {
-		return &events.APIGatewayProxyResponse{
-			StatusCode: 500,
-			Body:       "Failed to create db, " + err.Error(),
-		}, nil
-	}
+type jsonResponse struct {
+	content interface{}
+	status  int
+}
 
-	// get league and themes
-	err, league, themes := db.GetLeagueAndThemes("devetry")
-	if err != nil {
-		fmt.Println(err.Error())
-		return &events.APIGatewayProxyResponse{
-			StatusCode: 500,
-			Body:       "Failed to fetch league, " + err.Error(),
-		}, nil
-	}
+type ErrorResponse struct {
+	Message string
+}
 
+type LeagueAndThemesResponse struct {
+	League mxtpdb.League
+	Themes []mxtpdb.Theme
+}
+
+type ThemeAndSubmissionsResponse struct {
+	Theme       mxtpdb.Theme
+	Submissions []mxtpdb.Submission
+}
+
+func newErrorResponse(status int, message string) *jsonResponse {
+	return &jsonResponse{
+		content: ErrorResponse{
+			Message: message,
+		},
+		status: status,
+	}
+}
+
+func (response *jsonResponse) toAPIGatewayProxyResponse() *events.APIGatewayProxyResponse {
+	bytes, err := json.MarshalIndent(response.content, "", "    ")
+	if err != nil {
+		fmt.Println("ERROR: failed to marshal content: ", err.Error())
+		return &events.APIGatewayProxyResponse{
+			Body:       "Internal server error",
+			StatusCode: 500,
+		}
+	}
 	return &events.APIGatewayProxyResponse{
-		StatusCode: 200,
-		Body:       fmt.Sprintf("%v\n%v", league, themes),
-	}, nil
+		Body:       string(bytes),
+		StatusCode: response.status,
+	}
+}
+
+func getLeaguesHandler(parameters map[string]string, request events.APIGatewayProxyRequest) *events.APIGatewayProxyResponse {
+	db, err := mxtpdb.New()
+	if err != nil {
+		fmt.Println("ERROR: ", err.Error())
+		return newErrorResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
+	}
+
+	leagueName := parameters["leagueName"]
+	if leagueName == "" {
+		fmt.Println("ERROR: Parameter 'leagueName' not found")
+		return newErrorResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
+	}
+
+	league, themes, err := db.GetLeagueAndThemes(leagueName)
+	if err != nil {
+		fmt.Println("ERROR: ", err.Error())
+		return newErrorResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
+	}
+
+	response := jsonResponse{
+		content: LeagueAndThemesResponse{
+			League: *league,
+			Themes: themes,
+		},
+		status: 200,
+	}
+	return response.toAPIGatewayProxyResponse()
+}
+
+func getThemesHandler(parameters map[string]string, request events.APIGatewayProxyRequest) *events.APIGatewayProxyResponse {
+	db, err := mxtpdb.New()
+	if err != nil {
+		fmt.Println("ERROR: ", err.Error())
+		return newErrorResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
+	}
+
+	leagueName := parameters["leagueName"]
+	if leagueName == "" {
+		fmt.Println("ERROR: Parameter 'leagueName' not found")
+		return newErrorResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
+	}
+
+	themeId := parameters["themeId"]
+	if themeId == "" {
+		fmt.Println("ERROR: Parameter 'themeId' not found")
+		return newErrorResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
+	}
+
+	theme, submissions, err := db.GetThemeAndSubmissions(leagueName, themeId)
+	if err != nil {
+		fmt.Println("ERROR: ", err.Error())
+		return newErrorResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
+	}
+
+	response := jsonResponse{
+		content: ThemeAndSubmissionsResponse{
+			Theme:       *theme,
+			Submissions: submissions,
+		},
+		status: 200,
+	}
+	return response.toAPIGatewayProxyResponse()
 }
 
 func JockeyHandler(request events.APIGatewayProxyRequest) (*events.APIGatewayProxyResponse, error) {
 	b := bouncer.New("/.netlify/functions/jockey")
-	b.Handle("/leagues/{leagueName}", leaguesHandler)
+
+	b.Handle(bouncer.Get, "/leagues/{leagueName}", getLeaguesHandler)
+	b.Handle(bouncer.Get, "/leagues/{leagueName}/themes/{themeId}", getThemesHandler)
 
 	return b.Route(request)
 }

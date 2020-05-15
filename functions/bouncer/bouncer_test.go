@@ -8,27 +8,27 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func handlerA(parameters map[string]string, req events.APIGatewayProxyRequest) (*events.APIGatewayProxyResponse, error) {
+func handlerA(parameters map[string]string, req events.APIGatewayProxyRequest) *events.APIGatewayProxyResponse {
 	return &events.APIGatewayProxyResponse{
 		Body: "hello from A",
-	}, nil
+	}
 }
 
-func handlerB(parameters map[string]string, req events.APIGatewayProxyRequest) (*events.APIGatewayProxyResponse, error) {
+func handlerB(parameters map[string]string, req events.APIGatewayProxyRequest) *events.APIGatewayProxyResponse {
 	return &events.APIGatewayProxyResponse{
 		Body: "hello from B",
-	}, nil
+	}
 }
 
-func paramPrinter(parameters map[string]string, req events.APIGatewayProxyRequest) (*events.APIGatewayProxyResponse, error) {
+func paramPrinter(parameters map[string]string, req events.APIGatewayProxyRequest) *events.APIGatewayProxyResponse {
 	return &events.APIGatewayProxyResponse{
 		Body: fmt.Sprintf("%+v", parameters),
-	}, nil
+	}
 }
 
 func TestBouncerSimple(t *testing.T) {
 	b := New("")
-	b.Handle("/hello", handlerA)
+	b.Handle(Get, "/hello", handlerA)
 	res, err := b.Route(events.APIGatewayProxyRequest{Path: "/hello"})
 	require.Nil(t, err)
 	require.Equal(t, "hello from A", res.Body)
@@ -36,14 +36,14 @@ func TestBouncerSimple(t *testing.T) {
 
 func TestBouncerReturnsErrorWithoutMatch(t *testing.T) {
 	b := New("")
-	b.Handle("/hello", handlerA)
+	b.Handle(Get, "/hello", handlerA)
 	_, err := b.Route(events.APIGatewayProxyRequest{Path: "/world"})
 	require.NotNil(t, err)
 }
 
 func TestBouncerWithBasePath(t *testing.T) {
 	b := New("/my/base")
-	b.Handle("/hello", handlerA)
+	b.Handle(Get, "/hello", handlerA)
 	res, err := b.Route(events.APIGatewayProxyRequest{Path: "/my/base/hello"})
 	require.Nil(t, err)
 	require.Equal(t, "hello from A", res.Body)
@@ -51,8 +51,8 @@ func TestBouncerWithBasePath(t *testing.T) {
 
 func TestBouncerMultipleHandlers(t *testing.T) {
 	b := New("")
-	b.Handle("/handlerA", handlerA)
-	b.Handle("/handlerB", handlerB)
+	b.Handle(Get, "/handlerA", handlerA)
+	b.Handle(Get, "/handlerB", handlerB)
 	res, err := b.Route(events.APIGatewayProxyRequest{Path: "/handlerA"})
 	require.Nil(t, err)
 	require.Equal(t, "hello from A", res.Body)
@@ -63,7 +63,7 @@ func TestBouncerMultipleHandlers(t *testing.T) {
 
 func TestBouncerNestedHandlers(t *testing.T) {
 	b := New("")
-	b.Handle("/root/handlerA", handlerA)
+	b.Handle(Get, "/root/handlerA", handlerA)
 	res, err := b.Route(events.APIGatewayProxyRequest{Path: "/root/handlerA"})
 	require.Nil(t, err)
 	require.Equal(t, "hello from A", res.Body)
@@ -71,7 +71,7 @@ func TestBouncerNestedHandlers(t *testing.T) {
 
 func TestBouncerSimpleParameters(t *testing.T) {
 	b := New("")
-	b.Handle("/{paramA}", paramPrinter)
+	b.Handle(Get, "/{paramA}", paramPrinter)
 	res, err := b.Route(events.APIGatewayProxyRequest{Path: "/hello"})
 	require.Nil(t, err)
 	require.Equal(t, "map[paramA:hello]", res.Body)
@@ -79,7 +79,7 @@ func TestBouncerSimpleParameters(t *testing.T) {
 
 func TestBouncerSimpleParametersInPath(t *testing.T) {
 	b := New("")
-	b.Handle("/authors/{authorId}", paramPrinter)
+	b.Handle(Get, "/authors/{authorId}", paramPrinter)
 	res, err := b.Route(events.APIGatewayProxyRequest{Path: "/authors/123"})
 	require.Nil(t, err)
 	require.Equal(t, "map[authorId:123]", res.Body)
@@ -87,7 +87,7 @@ func TestBouncerSimpleParametersInPath(t *testing.T) {
 
 func TestBouncerMultipleParametersInPath(t *testing.T) {
 	b := New("")
-	b.Handle("/authors/{authorId}/books/{bookId}", paramPrinter)
+	b.Handle(Get, "/authors/{authorId}/books/{bookId}", paramPrinter)
 	res, err := b.Route(events.APIGatewayProxyRequest{Path: "/authors/123/books/666"})
 	require.Nil(t, err)
 	require.Equal(t, "map[authorId:123 bookId:666]", res.Body)
@@ -95,9 +95,9 @@ func TestBouncerMultipleParametersInPath(t *testing.T) {
 
 func TestBouncerSimpleRestUseCase(t *testing.T) {
 	b := New("")
-	b.Handle("/authors/{authorId}", paramPrinter)
-	b.Handle("/authors/{authorId}/books/{bookId}", paramPrinter)
-	b.Handle("/authors/{authorId}/books/{bookId}/pages/{pageNumber}", paramPrinter)
+	b.Handle(Get, "/authors/{authorId}", paramPrinter)
+	b.Handle(Get, "/authors/{authorId}/books/{bookId}", paramPrinter)
+	b.Handle(Get, "/authors/{authorId}/books/{bookId}/pages/{pageNumber}", paramPrinter)
 
 	res, err := b.Route(events.APIGatewayProxyRequest{Path: "/authors/123"})
 	require.Nil(t, err)

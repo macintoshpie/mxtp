@@ -7,7 +7,14 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 )
 
-type apiHandler func(map[string]string, events.APIGatewayProxyRequest) (*events.APIGatewayProxyResponse, error)
+type Method string
+
+const (
+	Get  = "GET"
+	Post = "POST"
+)
+
+type apiHandler func(map[string]string, events.APIGatewayProxyRequest) *events.APIGatewayProxyResponse
 
 type handlerNode struct {
 	handler       *apiHandler
@@ -16,14 +23,18 @@ type handlerNode struct {
 }
 
 type Bouncer struct {
-	BasePath string
-	handlers handlerNode
+	BasePath     string
+	getHandlers  handlerNode
+	postHandlers handlerNode
 }
 
 func New(basePath string) *Bouncer {
 	return &Bouncer{
 		BasePath: basePath,
-		handlers: handlerNode{
+		getHandlers: handlerNode{
+			subnodes: make(map[string]handlerNode),
+		},
+		postHandlers: handlerNode{
 			subnodes: make(map[string]handlerNode),
 		},
 	}
@@ -74,16 +85,33 @@ func (h *handlerNode) get(path string) (*apiHandler, map[string]string) {
 	return nil, nil
 }
 
-func (b *Bouncer) Handle(pattern string, handler apiHandler) {
+func (b *Bouncer) Handle(method Method, pattern string, handler apiHandler) {
 	// FIXME: for now just prepend the path with the base path
 	path := strings.Split(b.BasePath+pattern, "/")
-	b.handlers.update(path, handler)
+	switch method {
+	case Get:
+		b.getHandlers.update(path, handler)
+	case Post:
+		b.postHandlers.update(path, handler)
+	default:
+		b.getHandlers.update(path, handler)
+	}
 }
 
 func (b *Bouncer) Route(req events.APIGatewayProxyRequest) (*events.APIGatewayProxyResponse, error) {
-	handler, parameters := b.handlers.get(req.Path)
+	var handler *apiHandler
+	var parameters map[string]string
+	switch req.HTTPMethod {
+	case Get:
+		handler, parameters = b.getHandlers.get(req.Path)
+	case Post:
+		handler, parameters = b.postHandlers.get(req.Path)
+	default:
+		handler, parameters = b.getHandlers.get(req.Path)
+	}
 	if handler == nil {
 		return nil, errors.New("No handler found")
 	}
-	return (*handler)(parameters, req)
+
+	return (*handler)(parameters, req), nil
 }

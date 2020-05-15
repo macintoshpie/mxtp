@@ -59,11 +59,60 @@ type Submission struct {
 	Votes   []string
 }
 
-func New() (error, *DB) {
+func (item *MxtpItem) toLeague() (*League, error) {
+	splitId := strings.Split(item.PK, "#")
+	if len(splitId) != 2 {
+		return nil, errors.New("Invalid league item")
+	}
+	if splitId[0] != "league" {
+		return nil, errors.New("Invalid league item")
+	}
+
+	return &League{
+		Name:          splitId[1],
+		Description:   item.LeagueDescription,
+		SubmitThemeId: item.SubmitThemeId,
+		VoteThemeId:   item.VoteThemeId,
+	}, nil
+}
+
+func (item *MxtpItem) toTheme() (*Theme, error) {
+	splitId := strings.Split(item.SK, "#")
+	if len(splitId) != 2 {
+		return nil, errors.New("Invalid theme item")
+	}
+	if splitId[0] != "theme" {
+		return nil, errors.New("Invalid theme item")
+	}
+
+	return &Theme{
+		Id:          splitId[1],
+		Name:        item.ThemeName,
+		Description: item.ThemeDescription,
+	}, nil
+}
+
+func (item *MxtpItem) toSubmission() (*Submission, error) {
+	splitId := strings.Split(item.SK, "#")
+	if len(splitId) != 2 {
+		return nil, errors.New("Invalid submission item")
+	}
+	if splitId[0] != "user" {
+		return nil, errors.New("Invalid submission item")
+	}
+
+	return &Submission{
+		UserId:  item.UserId,
+		SongUrl: item.SongUrl,
+		Votes:   item.Votes,
+	}, nil
+}
+
+func New() (*DB, error) {
 	accessKeyId := os.Getenv("PERSONAL_AWS_ACCESS_KEY_ID")
 	secretAccessKey := os.Getenv("PERSONAL_AWS_SECRET_ACCESS_KEY")
 	if accessKeyId == "" || secretAccessKey == "" {
-		return errors.New("Missing required environment vars"), nil
+		return nil, errors.New("Missing required environment vars")
 	}
 
 	sess, err := session.NewSession(&aws.Config{
@@ -72,39 +121,40 @@ func New() (error, *DB) {
 	})
 
 	if err != nil {
-		return err, nil
+		return nil, err
 	}
 
 	db := dynamo.New(sess, &aws.Config{Region: aws.String("us-west-2")})
-	return nil, &DB{
+	return &DB{
 		db,
 		db.Table("mxtp_test"),
-	}
+	}, nil
 }
 
-func (db *DB) GetThemeAndSubmissions(leagueName, themeId string) (error, Theme, []Submission) {
+func (db *DB) GetThemeAndSubmissions(leagueName, themeId string) (*Theme, []Submission, error) {
 	var items []MxtpItem
 	err := db.table.Get("GSI1PK", fmt.Sprintf("league#%v#theme#%v", leagueName, themeId)).
 		Index("GSI1").
 		All(&items)
-
 	if err != nil {
-		return err, Theme{}, []Submission{}
+		return nil, []Submission{}, err
 	}
 
-	theme := Theme{
-		Name: items[0].ThemeName,
+	theme, err := items[0].toTheme()
+	if err != nil {
+		return nil, []Submission{}, err
 	}
 	var submissions []Submission
 	for _, item := range items[1:] {
-		submissions = append(submissions, Submission{
-			UserId:  item.UserId,
-			SongUrl: item.SongUrl,
-			Votes:   item.Votes,
-		})
+		submission, err := item.toSubmission()
+		if err != nil {
+			fmt.Println("ERROR: skipping submission due to error: ", err.Error())
+			continue
+		}
+		submissions = append(submissions, *submission)
 	}
 
-	return nil, theme, submissions
+	return theme, submissions, nil
 }
 
 func (db *DB) PutSubmission(leagueName, themeId string, submission Submission) error {
@@ -171,38 +221,30 @@ func (db *DB) UpdateLeague(league League) error {
 	return update.Run()
 }
 
-func (db *DB) GetLeagueAndThemes(leagueName string) (error, League, []Theme) {
+func (db *DB) GetLeagueAndThemes(leagueName string) (*League, []Theme, error) {
 	var items []MxtpItem
 	err := db.table.Get("PK", fmt.Sprintf("league#%v", leagueName)).
 		All(&items)
 
 	if err != nil {
-		return err, League{}, []Theme{}
+		return nil, []Theme{}, err
 	}
 
-	splitId := strings.Split(items[0].PK, "#")
-	if len(splitId) != 2 {
-		return errors.New("Bad PK for league"), League{}, []Theme{}
+	if len(items) == 0 {
+		return nil, []Theme{}, errors.New("No league found")
 	}
-	league := League{
-		Name:          splitId[1],
-		Description:   items[0].LeagueDescription,
-		SubmitThemeId: items[0].SubmitThemeId,
-		VoteThemeId:   items[0].VoteThemeId,
-	}
+
+	league, err := items[0].toLeague()
 
 	var themes []Theme
 	for _, item := range items[1:] {
-		splitId := strings.Split(item.SK, "#")
-		if len(splitId) != 2 {
-			return errors.New("Bad SK for theme"), League{}, []Theme{}
+		theme, err := item.toTheme()
+		if err != nil {
+			fmt.Println("ERROR: skipping theme item due to error: ", err.Error())
+			continue
 		}
-		themes = append(themes, Theme{
-			Id:          splitId[1],
-			Name:        item.ThemeName,
-			Description: item.ThemeDescription,
-		})
+		themes = append(themes, *theme)
 	}
 
-	return nil, league, themes
+	return league, themes, nil
 }
