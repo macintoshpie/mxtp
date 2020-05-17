@@ -34,7 +34,7 @@ h1, h2, h3 {
   margin-bottom: 0px;
 }
 
-.btn-success {
+.btn-success, .btn-success:hover, .btn-success:hover:enabled {
   background-color: rgb(88, 231, 100);
 }
 
