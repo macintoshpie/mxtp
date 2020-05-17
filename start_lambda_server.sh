@@ -24,6 +24,7 @@ import socketserver
 from urllib.request import urlopen
 from json import dumps, loads
 import os
+import time
 
 PORT = 8000
 LAMBDA_PORT = int(os.getenv("LAMBDA_PORT", "9001"))
@@ -77,5 +78,6 @@ while not started:
             print(f"Proxying from port {PORT} to {LAMBDA_PORT}")
             httpd.serve_forever()
     except:
-        PORT += 1
+        print("Port still occupied, waiting...")
+        time.sleep(5)
 '

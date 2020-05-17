@@ -49,11 +49,13 @@ func (response *jsonResponse) toAPIGatewayProxyResponse() *events.APIGatewayProx
 		return &events.APIGatewayProxyResponse{
 			Body:       "Internal server error",
 			StatusCode: 500,
+			Headers:    make(map[string]string),
 		}
 	}
 	return &events.APIGatewayProxyResponse{
 		Body:       string(bytes),
 		StatusCode: response.status,
+		Headers:    make(map[string]string),
 	}
 }
 
