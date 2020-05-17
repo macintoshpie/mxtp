@@ -114,7 +114,9 @@ const hideOrDisplay = () => {
 
 const userRegex = /[a-z]+@devetry.com/
 const setUser = () => {
-  const username = document.getElementById('who-input').value
+  const whoInput = document.getElementById('who-input')
+  const username = whoInput.value.toLowerCase()
+  whoInput.value = username
   if (userRegex.test(username)) {
     state.user.username = username
     removeWarning(WARN_USERNAME)
