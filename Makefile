@@ -1,5 +1,5 @@
 # functions to build
-go_apps = bin/functions/hello bin/functions/jockey
+go_apps = bin/functions/jockey
 go_lib = functions/bouncer/bouncer.go
 
 ./bin/functions/%: functions/%/main.go $(go_lib)
