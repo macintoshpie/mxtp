@@ -15,6 +15,8 @@ github.com/fauna/faunadb-go v2.0.0+incompatible/go.mod h1:WYAh1hNDFEgbsKKeUhsHPG
 github.com/go-sql-driver/mysql v1.5.0/go.mod h1:DCzpHaOWr8IXmIStZouvnhqoel9Qv2LBy8hT2VhHyBg=
 github.com/gofrs/uuid v3.2.0+incompatible h1:y12jRkkFxsd7GpqdSZ+/KCs/fJbqpEXSGd4+jfEaewE=
 github.com/gofrs/uuid v3.2.0+incompatible/go.mod h1:b2aQJv3Z4Fp6yNu3cdSllBxTCLRxnplIgP/c0N/04lM=
+github.com/google/uuid v1.1.1 h1:Gkbcsh/GbpXz7lPftLA3P6TYMwjCLYm83jiFQZF/3gY=
+github.com/google/uuid v1.1.1/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
 github.com/guregu/dynamo v1.7.3 h1:xAyZ2IrzIv/bh97SPhBpqSqxai1zQehRzaWLRvH2ghg=
 github.com/guregu/dynamo v1.7.3/go.mod h1:cpuroSssTw4MSkimgyK5iWSl0Mr/NIZKRxBOc95ofnk=
 github.com/jmespath/go-jmespath v0.3.0 h1:OS12ieG61fsCg5+qLJ+SsW9NicxNkg3b25OyT2yCeUc=

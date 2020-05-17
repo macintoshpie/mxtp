@@ -22,8 +22,10 @@ type MessageResponse struct {
 }
 
 type LeagueAndThemesResponse struct {
-	League mxtpdb.League
-	Themes []mxtpdb.Theme
+	League      mxtpdb.League
+	VoteTheme   mxtpdb.Theme
+	SubmitTheme mxtpdb.Theme
+	Themes      []mxtpdb.Theme
 }
 
 type ThemeAndSubmissionsResponse struct {
@@ -58,8 +60,14 @@ func (response *jsonResponse) toAPIGatewayProxyResponse() *events.APIGatewayProx
 func authMiddleware(handler bouncer.ApiHandler) bouncer.ApiHandler {
 	return func(parameters map[string]string, request events.APIGatewayProxyRequest) *events.APIGatewayProxyResponse {
 		authHeader := strings.TrimSpace(request.Headers["authorization"])
+		if authHeader == "" {
+			authHeader = strings.TrimSpace(request.Headers["Authorization"])
+		}
 		authParts := strings.Fields(authHeader)
+		fmt.Println("Auth header: ", authHeader)
+		fmt.Println("Auth parts: ", authParts)
 		if len(authParts) != 2 || strings.ToLower(authParts[0]) != "basic" {
+			fmt.Println("WARNING: auth header was not what was expected")
 			return handler(parameters, request)
 		}
 		authHeaderDecodedBytes, err := base64.StdEncoding.DecodeString(authParts[1])
@@ -70,6 +78,7 @@ func authMiddleware(handler bouncer.ApiHandler) bouncer.ApiHandler {
 
 		authHeader = string(authHeaderDecodedBytes)
 		if authHeader == "" {
+			fmt.Println("Somehow it was empty")
 			return handler(parameters, request)
 		}
 
@@ -97,10 +106,22 @@ func getLeaguesHandler(parameters map[string]string, request events.APIGatewayPr
 		return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
 	}
 
+	// find the vote and submit theme in the themes
+	var voteTheme, submitTheme mxtpdb.Theme
+	for _, theme := range themes {
+		if theme.Id == league.VoteThemeId {
+			voteTheme = theme
+		}
+		if theme.Id == league.SubmitThemeId {
+			submitTheme = theme
+		}
+	}
 	response := jsonResponse{
 		content: LeagueAndThemesResponse{
-			League: *league,
-			Themes: themes,
+			League:      *league,
+			Themes:      themes,
+			VoteTheme:   voteTheme,
+			SubmitTheme: submitTheme,
 		},
 		status: 200,
 	}
@@ -173,7 +194,7 @@ func postSubmissionsHandler(parameters map[string]string, request events.APIGate
 		return newMessageResponse(400, "Bad submission").toAPIGatewayProxyResponse()
 	}
 
-	err = db.PutSubmission(leagueName, themeId, username, submission)
+	err = db.UpdateSubmission(leagueName, themeId, username, submission.SongUrl, nil)
 	if err != nil {
 		fmt.Println("ERROR: failed to put submission: ", err.Error())
 		return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
@@ -182,12 +203,53 @@ func postSubmissionsHandler(parameters map[string]string, request events.APIGate
 	return newMessageResponse(200, "Successfully put submission").toAPIGatewayProxyResponse()
 }
 
+func postVotesHandler(parameters map[string]string, request events.APIGatewayProxyRequest) *events.APIGatewayProxyResponse {
+	username := parameters["username"]
+	if username == "" {
+		return newMessageResponse(400, "Invalid Authorization header").toAPIGatewayProxyResponse()
+	}
+
+	leagueName := parameters["leagueName"]
+	if leagueName == "" {
+		fmt.Println("ERROR: Parameter 'leagueName' not found")
+		return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
+	}
+
+	themeId := parameters["themeId"]
+	if themeId == "" {
+		fmt.Println("ERROR: Parameter 'themeId' not found")
+		return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
+	}
+
+	db, err := mxtpdb.New()
+	if err != nil {
+		fmt.Println("ERROR: ", err.Error())
+		return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
+	}
+
+	var submission mxtpdb.Submission
+	err = json.Unmarshal([]byte(request.Body), &submission)
+	if err != nil {
+		fmt.Println("ERROR: failed to unmarshal submission: ", err.Error())
+		return newMessageResponse(400, "Bad submission").toAPIGatewayProxyResponse()
+	}
+
+	err = db.UpdateSubmission(leagueName, themeId, username, "", &submission.Votes)
+	if err != nil {
+		fmt.Println("ERROR: failed to put submission: ", err.Error())
+		return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
+	}
+
+	return newMessageResponse(200, "Successfully updated submission").toAPIGatewayProxyResponse()
+}
+
 func JockeyHandler(request events.APIGatewayProxyRequest) (*events.APIGatewayProxyResponse, error) {
 	b := bouncer.New("/.netlify/functions/jockey")
 
 	b.Handle(bouncer.Get, "/leagues/{leagueName}", authMiddleware(getLeaguesHandler))
 	b.Handle(bouncer.Get, "/leagues/{leagueName}/themes/{themeId}", authMiddleware(getThemesHandler))
 	b.Handle(bouncer.Post, "/leagues/{leagueName}/themes/{themeId}/submissions", authMiddleware(postSubmissionsHandler))
+	b.Handle(bouncer.Post, "/leagues/{leagueName}/themes/{themeId}/votes", authMiddleware(postVotesHandler))
 
 	return b.Route(request)
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/google/uuid"
 	"github.com/guregu/dynamo"
 )
 
@@ -144,7 +145,8 @@ func (db *DB) GetThemeAndSubmissions(leagueName, themeId string) (*Theme, []Subm
 	if err != nil {
 		return nil, []Submission{}, err
 	}
-	var submissions []Submission
+
+	submissions := []Submission{}
 	for _, item := range items[1:] {
 		submission, err := item.toSubmission()
 		if err != nil {
@@ -157,18 +159,19 @@ func (db *DB) GetThemeAndSubmissions(leagueName, themeId string) (*Theme, []Subm
 	return theme, submissions, nil
 }
 
-func (db *DB) PutSubmission(leagueName, themeId, userId string, submission Submission) error {
-	item := MxtpItem{
-		PK:      fmt.Sprintf("theme#%v#user#%v", themeId, userId),
-		SK:      fmt.Sprintf("user#%v", userId),
-		GSI1PK:  fmt.Sprintf("league#%v#theme#%v", leagueName, themeId),
-		GSI1SK:  fmt.Sprintf("user#%v", userId),
-		SongUrl: submission.SongUrl,
-		Votes:   submission.Votes,
-	}
-	err := db.table.Put(item).Run()
-	return err
-}
+// PutSubmission puts a submission - UpdateSubmission should be preferred
+// func (db *DB) PutSubmission(leagueName, themeId, userId string, submission Submission) error {
+// 	item := MxtpItem{
+// 		PK:      fmt.Sprintf("theme#%v#user#%v", themeId, userId),
+// 		SK:      fmt.Sprintf("user#%v", userId),
+// 		GSI1PK:  fmt.Sprintf("league#%v#theme#%v", leagueName, themeId),
+// 		GSI1SK:  fmt.Sprintf("user#%v", userId),
+// 		SongUrl: submission.SongUrl,
+// 		Votes:   submission.Votes,
+// 	}
+// 	err := db.table.Put(item).Run()
+// 	return err
+// }
 
 func (db *DB) PutTheme(leagueName string, theme Theme) error {
 	item := MxtpItem{
@@ -185,8 +188,12 @@ func (db *DB) PutTheme(leagueName string, theme Theme) error {
 
 func (db *DB) UpdateSubmission(leagueName, themeId, userId, songUrl string, votes *[]string) error {
 	update := db.table.Update("PK", fmt.Sprintf("theme#%v#user#%v", themeId, userId)).
-		Range("SK", fmt.Sprintf("user#%v", userId))
+		Range("SK", fmt.Sprintf("user#%v", userId)).
+		SetIfNotExists("SubmissionId", uuid.New()).
+		SetIfNotExists("GSI1PK", fmt.Sprintf("league#%v#theme#%v", leagueName, themeId)).
+		SetIfNotExists("GSI1SK", fmt.Sprintf("user#%v", userId))
 
+	fmt.Println("GOT SONG URL: ", songUrl)
 	if songUrl != "" {
 		update = update.Set("SongUrl", songUrl)
 	}

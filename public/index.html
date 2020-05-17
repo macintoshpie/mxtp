@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset='utf-8'>
+	<meta name='viewport' content='width=device-width,initial-scale=1'>
+
+	<title>mxtp</title>
+
+	<link rel='stylesheet' href='style.css'>
+
+	<script src='index.js' type="module"></script>
+</head>
+
+<body>
+	
+	<div class="container">
+		<h1>mxtp</h1>
+		<div id="who-card" class="card background-a">
+			<h2 style="display: inline-block;">who are you</h2>
+			<div>
+				<input id="who-input" type="text">
+				<button id="who-submit">></button>
+			</div>
+		</div>
+		<div id="warn-card" class="card card-info" hidden>
+			<h3 id=warn-card-username>name must be a devetry email</h3>
+			<h3 id=warn-card-fetching>loading...</h3>
+			<h3 id=warn-card-fetchfailed>failed to fetch data</h3>
+		</div>
+		<div id="submit-card" class="card background-b" hidden>
+			<h2>submit</h2>
+			<div class="theme-container">
+				<div class="theme-info">
+					<h3 id="submit-theme-name" class="theme-container-name"></h3>
+					<div id="submit-theme-desc" class="theme-container-desc"></div>
+				</div>
+			</div>
+			<div class="columnar-form">
+				<span>
+					<label for="submit-theme-form-input">song url:</label>
+					<input id="submit-theme-form-input" type="text">
+				</span>
+				<span>
+					<button id="submit-theme-form-submit">submit</button>
+				</span>
+			</div>
+		</div>
+		<div id="vote-card" class="card background-c" hidden>
+			<h2>vote</h2>
+			<div id="vote-theme-container">
+				<div class="theme-info">
+					<h3 id="vote-theme-name" class="theme-container-name"></h3>
+					<div id="vote-theme-desc" class="theme-container-desc"></div>
+				</div>
+				<iframe src="https://open.spotify.com/embed/playlist/15sUflx5duQD5RUB4ZQnir" width="100%" height="380" frameborder="0" allowtransparency="true" allow="encrypted-media"></iframe>
+				<div class="columnar-form" id="vote-theme-form">
+					<button id="vote-theme-form-submit">vote</button>
+				</div>
+			</div>
+		</div>
+	</div>
+</body>
+</html>
