@@ -10,8 +10,9 @@ import (
 type Method string
 
 const (
-	Get  = "GET"
-	Post = "POST"
+	Get     = "GET"
+	Post    = "POST"
+	Options = "OPTIONS"
 )
 
 type ApiHandler func(map[string]string, events.APIGatewayProxyRequest) *events.APIGatewayProxyResponse

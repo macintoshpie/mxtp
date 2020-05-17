@@ -43,19 +43,25 @@ func newMessageResponse(status int, message string) *jsonResponse {
 }
 
 func (response *jsonResponse) toAPIGatewayProxyResponse() *events.APIGatewayProxyResponse {
+	defaultHeaders := make(map[string]string)
+	defaultHeaders["Access-Control-Allow-Origin"] = "*"
+	defaultHeaders["Access-Control-Allow-Headers"] = "*"
+	defaultHeaders["Access-Control-Allow-Methods"] = "POST, GET, OPTIONS, DELETE"
+	defaultHeaders["Access-Control-Max-Age"] = "86400"
 	bytes, err := json.MarshalIndent(response.content, "", "    ")
 	if err != nil {
 		fmt.Println("ERROR: failed to marshal content: ", err.Error())
 		return &events.APIGatewayProxyResponse{
 			Body:       "Internal server error",
 			StatusCode: 500,
-			Headers:    make(map[string]string),
+			Headers:    defaultHeaders,
 		}
 	}
+
 	return &events.APIGatewayProxyResponse{
 		Body:       string(bytes),
 		StatusCode: response.status,
-		Headers:    make(map[string]string),
+		Headers:    defaultHeaders,
 	}
 }
 
@@ -246,6 +252,16 @@ func postVotesHandler(parameters map[string]string, request events.APIGatewayPro
 }
 
 func JockeyHandler(request events.APIGatewayProxyRequest) (*events.APIGatewayProxyResponse, error) {
+	// handle OPTIONS preflight request
+	if request.HTTPMethod == bouncer.Options {
+		response := newMessageResponse(204, "").toAPIGatewayProxyResponse()
+		response.Headers["Access-Control-Allow-Origin"] = "*"
+		response.Headers["Access-Control-Allow-Headers"] = "*"
+		response.Headers["Access-Control-Allow-Methods"] = "POST, GET, OPTIONS, DELETE"
+		response.Headers["Access-Control-Max-Age"] = "86400"
+		return response, nil
+	}
+
 	b := bouncer.New("/.netlify/functions/jockey")
 
 	b.Handle(bouncer.Get, "/leagues/{leagueName}", authMiddleware(getLeaguesHandler))

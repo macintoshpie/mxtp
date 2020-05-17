@@ -46,13 +46,13 @@ class Proxy(BaseHTTPRequestHandler):
         body = response.read().decode()
         http_response = loads(body)
 
-        headers = http_response["headers"] if http_response.get("headers") else {}
+        headers = http_response.get("headers", {})
         body = http_response["body"] if http_response.get("body") else ""
         status_code = http_response.get("statusCode", 500)
         self.send_response(status_code)
-        for header, value in headers:
+        for header, value in headers.items():
             self.send_header(header, value)
-        self.send_header("Access-Control-Allow-Origin", "*")
+        #self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(bytes(body, "utf-8"))
 
@@ -63,12 +63,7 @@ class Proxy(BaseHTTPRequestHandler):
         self.proxy_it()
 
     def do_OPTIONS(self):
-        self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "*")
-        self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS, DELETE")
-        self.send_header("Access-Control-Max-Age", "86400")
-        self.end_headers()
+        self.proxy_it()
 
 started = False
 while not started:
