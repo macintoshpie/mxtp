@@ -100,8 +100,8 @@ const renderCards = () => {
 }
 
 const hideOrDisplay = () => {
-  // warnings is true if at least one warning should be show
-  const warnings = !Object.values(state.warnings).every(x => !x)
+  // warnings is true if at least one warning should be shown
+  const warnings = Object.values(state.warnings).some(x => x)
   document.getElementById('submit-card').hidden = state.user.username == undefined || warnings
   document.getElementById('vote-card').hidden = state.user.username == undefined || warnings
 
