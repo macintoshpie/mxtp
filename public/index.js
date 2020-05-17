@@ -15,6 +15,7 @@ const state = {
   warnings: {
     'warn-card-username': false,
     'warn-card-fetching': false,
+    'warn-card-fetchfailed': false,
   },
 }
 
@@ -39,10 +40,15 @@ window.onload = async () => {
       state.Themes = res.Themes
       state.SubmitTheme = res.SubmitTheme
       state.VoteTheme = res.VoteTheme
-      return getThemeAndSubmissions("devetry", VoteTheme.Id)
+      return getThemeAndSubmissions("devetry", state.VoteTheme.Id)
     })
-    .then(({ Submissions }) => {
-      state.VoteThemeSubmissions = Submissions
+    .then(res => {
+      if ('error' in res) {
+        addWarning(WARN_FETCH_FAILED)
+        removeWarning(WARN_FETCHING)
+        throw res
+      }
+      state.VoteThemeSubmissions = res.Submissions
       removeWarning(WARN_FETCHING)
 
       renderCards()
