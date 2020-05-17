@@ -1,4 +1,4 @@
-const host = 'http://mxtp.xyz'
+const host = 'https://mxtp.xyz'
 const baseUrl = `${host}/.netlify/functions/jockey`
 
 export async function getLeagueAndThemes(leagueName) {
