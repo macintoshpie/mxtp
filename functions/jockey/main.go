@@ -18,7 +18,7 @@ import (
 	"github.com/macintoshpie/mxtp-fx/mxtpdb"
 )
 
-const CALLBACK_URI = "https://wwww.mxtp.xyz/.netlify/functions/jockey/callback"
+const CALLBACK_URI = "https://www.mxtp.xyz/.netlify/functions/jockey/callback"
 
 type Game struct {
 	League           mxtpdb.League
