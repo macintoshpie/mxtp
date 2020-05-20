@@ -1,7 +1,7 @@
 package bouncer
 
 import (
-	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -111,7 +111,10 @@ func (b *Bouncer) Route(req events.APIGatewayProxyRequest) (*events.APIGatewayPr
 		handler, parameters = b.getHandlers.get(req.Path)
 	}
 	if handler == nil {
-		return nil, errors.New("No handler found")
+		return &events.APIGatewayProxyResponse{
+			StatusCode: 404,
+			Body:       fmt.Sprintf("No resource at %v %v", req.HTTPMethod, req.Path),
+		}, nil
 	}
 
 	return (*handler)(parameters, req), nil

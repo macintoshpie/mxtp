@@ -36,15 +36,18 @@ class Proxy(BaseHTTPRequestHandler):
         data_string = ""
         if content_length:
             data_string = self.rfile.read(int(content_length)).decode()
-        response = urlopen(self.lambda_endpoint, dumps({
+        constructed_request = {
             "path": self.path,
             "httpMethod": self.command,
             "body": data_string,
             "headers": {k: self.headers[k] for k in self.headers.keys()}
-        }).encode())
+        }
+        print("Sending Request: ", constructed_request)
+        response = urlopen(self.lambda_endpoint, dumps(constructed_request).encode())
 
         body = response.read().decode()
         http_response = loads(body)
+        print("\nGot Response: ", http_response)
 
         headers = http_response.get("headers", {})
         body = http_response["body"] if http_response.get("body") else ""

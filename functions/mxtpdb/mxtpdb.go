@@ -9,7 +9,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/google/uuid"
 	"github.com/guregu/dynamo"
 )
 
@@ -19,93 +18,142 @@ type DB struct {
 }
 
 type MxtpItem struct {
-	PK string // partition key
-	SK string // sort key
-
-	// League items
-	LeagueDescription string `dynamo:",omitempty"`
-	SubmitThemeId     string `dynamo:",omitempty"`
-	VoteThemeId       string `dynamo:",omitempty"`
-
-	// Theme items
-	ThemeName        string `dynamo:",omitempty"`
-	ThemeDescription string `dynamo:",omitempty"`
-
-	// Submission items
-	UserId  string   `dynamo:",omitempty"`
-	SongUrl string   `dynamo:",omitempty"`
-	Votes   []string `dynamo:",omitempty"`
-
-	// Global Secondary Key 1
-	GSI1PK string `dynamo:",omitempty"`
-	GSI1SK string `dynamo:",omitempty"`
+	PK            string
+	SK            string
+	Name          string   `dynamo:",omitempty"`
+	Date          string   `dynamo:",omitempty"`
+	Description   string   `dynamo:",omitempty"`
+	UserId        string   `dynamo:",omitempty"`
+	SubmissionId  string   `dynamo:",omitempty"`
+	SubmissionIds []string `dynamo:",omitempty,set"`
+	SongUrl       string   `dynamo:",omitempty"`
+	Role          string   `dynamo:",omitempty"`
 }
 
 type League struct {
-	Name          string
-	Description   string
-	SubmitThemeId string
-	VoteThemeId   string
+	Name        string `dynamo:",omitempty"`
+	Description string `dynamo:",omitempty"`
+	SubmitTheme Theme  `dynamo:",omitempty"`
+	VoteTheme   Theme  `dynamo:",omitempty"`
 }
 
 type Theme struct {
-	Id          string
-	Name        string
-	Description string
+	Name        string `dynamo:",omitempty"`
+	Description string `dynamo:",omitempty"`
+	Date        string `dynamo:",omitempty"`
 }
 
-type Submission struct {
-	UserId  string
-	SongUrl string
-	Votes   []string
+type ThemeItems struct {
+	Id    string
+	Songs []Song  `dynamo:",omitempty"`
+	Votes []Votes `dynamo:",omitempty"`
 }
 
-func (item *MxtpItem) toLeague() (*League, error) {
-	splitId := strings.Split(item.PK, "#")
-	if len(splitId) != 2 {
-		return nil, errors.New("Invalid league item")
-	}
-	if splitId[0] != "league" {
-		return nil, errors.New("Invalid league item")
+type Song struct {
+	UserId       string `dynamo:",omitempty"`
+	SubmissionId string `dynamo:",omitempty"`
+	SongUrl      string `dynamo:",omitempty"`
+}
+
+type Votes struct {
+	UserId        string   `dynamo:",omitempty"`
+	SubmissionIds []string `dynamo:",omitempty"`
+}
+
+func validateCompoundKey(key string, expectedParts ...string) error {
+	keyParts := strings.Split(key, "#")
+	if len(keyParts) != len(expectedParts)*2 {
+		return errors.New(fmt.Sprintf("Expected %v to have %v parts", key, len(expectedParts)*2))
 	}
 
-	return &League{
-		Name:          splitId[1],
-		Description:   item.LeagueDescription,
-		SubmitThemeId: item.SubmitThemeId,
-		VoteThemeId:   item.VoteThemeId,
+	idx := 0
+	for idx*2 < len(keyParts) && idx < len(expectedParts) {
+		actualPart := keyParts[idx*2]
+		expectedPart := expectedParts[idx]
+		if actualPart != expectedPart {
+			return errors.New(fmt.Sprintf("Expected %v to be %v", actualPart, expectedPart))
+		}
+		idx += 1
+	}
+
+	return nil
+}
+
+func (item *MxtpItem) toLeague() (League, error) {
+	err := validateCompoundKey(item.PK, "league")
+	if err != nil {
+		return League{
+			SubmitTheme: Theme{},
+			VoteTheme:   Theme{},
+		}, errors.New(fmt.Sprintf("Failed to validate League: %v", err.Error()))
+	}
+
+	if item.SK != "~meta" {
+		return League{
+			SubmitTheme: Theme{},
+			VoteTheme:   Theme{},
+		}, errors.New(fmt.Sprintf("Failed to vaildate League: Expected SK to be ~meta but was %v", item.SK))
+	}
+
+	return League{
+		Name:        item.Name,
+		Description: item.Description,
+		SubmitTheme: Theme{},
+		VoteTheme:   Theme{},
 	}, nil
 }
 
-func (item *MxtpItem) toTheme() (*Theme, error) {
-	splitId := strings.Split(item.SK, "#")
-	if len(splitId) != 2 {
-		return nil, errors.New("Invalid theme item")
-	}
-	if splitId[0] != "theme" {
-		return nil, errors.New("Invalid theme item")
+func (item *MxtpItem) toTheme() (Theme, error) {
+	result := Theme{}
+	err := validateCompoundKey(item.PK, "league")
+	if err != nil {
+		return result, errors.New(fmt.Sprintf("Failed to validate Theme: %v", err.Error()))
 	}
 
-	return &Theme{
-		Id:          splitId[1],
-		Name:        item.ThemeName,
-		Description: item.ThemeDescription,
+	err = validateCompoundKey(item.SK, "theme")
+	if err != nil {
+		return result, errors.New(fmt.Sprintf("Failed to validate Theme: %v", err.Error()))
+	}
+
+	return Theme{
+		Name:        item.Name,
+		Description: item.Description,
+		Date:        item.Date,
 	}, nil
 }
 
-func (item *MxtpItem) toSubmission() (*Submission, error) {
-	splitId := strings.Split(item.SK, "#")
-	if len(splitId) != 2 {
-		return nil, errors.New("Invalid submission item")
-	}
-	if splitId[0] != "user" {
-		return nil, errors.New("Invalid submission item")
+func (item *MxtpItem) toSong() (Song, error) {
+	err := validateCompoundKey(item.PK, "league", "theme")
+	if err != nil {
+		return Song{}, errors.New(fmt.Sprintf("Failed to validate Song: %v", err.Error()))
 	}
 
-	return &Submission{
-		UserId:  splitId[1],
-		SongUrl: item.SongUrl,
-		Votes:   item.Votes,
+	err = validateCompoundKey(item.SK, "song")
+	if err != nil {
+		return Song{}, errors.New(fmt.Sprintf("Failed to validate Song: %v", err.Error()))
+	}
+
+	return Song{
+		UserId:       item.UserId,
+		SubmissionId: item.SubmissionId,
+		SongUrl:      item.SongUrl,
+	}, nil
+}
+
+func (item *MxtpItem) toVotes() (Votes, error) {
+	err := validateCompoundKey(item.PK, "league", "theme")
+	if err != nil {
+		return Votes{}, errors.New(fmt.Sprintf("Failed to validate Votes: %v", err.Error()))
+	}
+
+	err = validateCompoundKey(item.SK, "votes")
+	if err != nil {
+		return Votes{}, errors.New(fmt.Sprintf("Failed to validate Votes: %v", err.Error()))
+	}
+
+	return Votes{
+		UserId:        item.UserId,
+		SubmissionIds: item.SubmissionIds,
 	}, nil
 }
 
@@ -128,130 +176,225 @@ func New() (*DB, error) {
 	db := dynamo.New(sess, &aws.Config{Region: aws.String("us-west-2")})
 	return &DB{
 		db,
-		db.Table("mxtp_test"),
+		db.Table("mxtp"),
 	}, nil
 }
 
-func (db *DB) GetThemeAndSubmissions(leagueName, themeId string) (*Theme, []Submission, error) {
-	var items []MxtpItem
-	err := db.table.Get("GSI1PK", fmt.Sprintf("league#%v#theme#%v", leagueName, themeId)).
-		Index("GSI1").
-		All(&items)
-	if err != nil {
-		return nil, []Submission{}, err
-	}
-
-	theme, err := items[0].toTheme()
-	if err != nil {
-		return nil, []Submission{}, err
-	}
-
-	submissions := []Submission{}
-	for _, item := range items[1:] {
-		submission, err := item.toSubmission()
-		if err != nil {
-			fmt.Println("ERROR: skipping submission due to error: ", err.Error())
-			continue
-		}
-		submissions = append(submissions, *submission)
-	}
-
-	return theme, submissions, nil
-}
-
-// PutSubmission puts a submission - UpdateSubmission should be preferred
-// func (db *DB) PutSubmission(leagueName, themeId, userId string, submission Submission) error {
-// 	item := MxtpItem{
-// 		PK:      fmt.Sprintf("theme#%v#user#%v", themeId, userId),
-// 		SK:      fmt.Sprintf("user#%v", userId),
-// 		GSI1PK:  fmt.Sprintf("league#%v#theme#%v", leagueName, themeId),
-// 		GSI1SK:  fmt.Sprintf("user#%v", userId),
-// 		SongUrl: submission.SongUrl,
-// 		Votes:   submission.Votes,
-// 	}
-// 	err := db.table.Put(item).Run()
-// 	return err
-// }
-
-func (db *DB) PutTheme(leagueName string, theme Theme) error {
-	item := MxtpItem{
-		PK:               fmt.Sprintf("league#%v", leagueName),
-		SK:               fmt.Sprintf("theme#%v", theme.Id),
-		GSI1PK:           fmt.Sprintf("league#%v#theme#%v", leagueName, theme.Id),
-		GSI1SK:           fmt.Sprintf("theme#%v", theme.Id),
-		ThemeName:        theme.Name,
-		ThemeDescription: theme.Description,
-	}
-	err := db.table.Put(item).Run()
-	return err
-}
-
-func (db *DB) UpdateSubmission(leagueName, themeId, userId, songUrl string, votes *[]string) error {
-	update := db.table.Update("PK", fmt.Sprintf("theme#%v#user#%v", themeId, userId)).
-		Range("SK", fmt.Sprintf("user#%v", userId)).
-		SetIfNotExists("SubmissionId", uuid.New()).
-		SetIfNotExists("GSI1PK", fmt.Sprintf("league#%v#theme#%v", leagueName, themeId)).
-		SetIfNotExists("GSI1SK", fmt.Sprintf("user#%v", userId))
-
-	fmt.Println("GOT SONG URL: ", songUrl)
-	if songUrl != "" {
-		update = update.Set("SongUrl", songUrl)
-	}
-
-	if votes != nil {
-		update = update.SetSet("Votes", votes)
-	}
-
-	return update.Run()
-}
-
-func (db *DB) UpdateLeague(league League) error {
-	if league.Name == "" {
-		return errors.New("League must have a name")
-	}
-
-	update := db.table.Update("PK", fmt.Sprintf("league#%v", league.Name)).
-		Range("SK", fmt.Sprintf("meta#%v", league.Name))
-
-	if league.Description != "" {
-		update = update.Set("LeagueDescription", league.Description)
-	}
-
-	if league.SubmitThemeId != "" {
-		update = update.Set("SubmitThemeId", league.SubmitThemeId)
-	}
-
-	if league.VoteThemeId != "" {
-		update = update.Set("VoteThemeId", league.VoteThemeId)
-	}
-
-	return update.Run()
-}
-
-func (db *DB) GetLeagueAndThemes(leagueName string) (*League, []Theme, error) {
+func (db *DB) GetLeague(leagueName string) (League, error) {
 	var items []MxtpItem
 	err := db.table.Get("PK", fmt.Sprintf("league#%v", leagueName)).
+		Order(dynamo.Descending).
+		Limit(3).
 		All(&items)
 
 	if err != nil {
-		return nil, []Theme{}, err
+		return League{
+			SubmitTheme: Theme{},
+			VoteTheme:   Theme{},
+		}, err
 	}
 
+	// Expect the items to be the following:
+	// [0] - League info
+	// [1] - Submitting theme (if exists)
+	// [2] - Voting theme (if exists)
 	if len(items) == 0 {
-		return nil, []Theme{}, errors.New("No league found")
+		return League{
+			SubmitTheme: Theme{},
+			VoteTheme:   Theme{},
+		}, errors.New("No items found for league")
 	}
 
 	league, err := items[0].toLeague()
-
-	var themes []Theme
-	for _, item := range items[1:] {
-		theme, err := item.toTheme()
-		if err != nil {
-			fmt.Println("ERROR: skipping theme item due to error: ", err.Error())
-			continue
-		}
-		themes = append(themes, *theme)
+	if err != nil {
+		return League{
+			SubmitTheme: Theme{},
+			VoteTheme:   Theme{},
+		}, err
 	}
 
-	return league, themes, nil
+	if len(items) == 1 {
+		// no themes yet for league
+		return league, nil
+	}
+	submitTheme, err := items[1].toTheme()
+	if err != nil {
+		return league, err
+	}
+	league.SubmitTheme = submitTheme
+
+	if len(items) == 2 {
+		// only one theme (submit theme)
+		return league, nil
+	}
+	voteTheme, err := items[2].toTheme()
+	if err != nil {
+		return league, err
+	}
+	league.VoteTheme = voteTheme
+
+	return league, nil
 }
+
+func (db *DB) GetSong(leagueName, themeId, userId string) (Song, error) {
+	var item MxtpItem
+	err := db.table.Get("PK", fmt.Sprintf("league#%v#theme#%v", leagueName, themeId)).
+		Range("SK", dynamo.Equal, fmt.Sprintf("song#%v", userId)).
+		One(&item)
+
+	if err != nil {
+		return Song{}, err
+	}
+
+	song, err := item.toSong()
+	if err != nil {
+		return Song{}, err
+	}
+
+	return song, nil
+}
+
+func (db *DB) GetThemeItems(leagueName, themeId string) (ThemeItems, error) {
+	var items []MxtpItem
+	err := db.table.Get("PK", fmt.Sprintf("league#%v#theme#%v", leagueName, themeId)).
+		// only Songs have SubmissionId, and the only other item that matches the UserId must be the user's Votes (if it exists)
+		// Filter("attribute_exists(SubmissionId) OR UserId = ?", userId).
+		// Order(dynamo.Descending).
+		All(&items)
+
+	if err != nil {
+		return ThemeItems{}, err
+	}
+
+	// Expected order of results
+	// [0:x] - Songs
+	// [x:] - Votes
+	if len(items) == 0 {
+		// there were no songs or votes for the theme
+		return ThemeItems{}, nil
+	}
+
+	songs := []Song{}
+	idx := 0
+	for idx < len(items) {
+		song, err := items[idx].toSong()
+		if err != nil {
+			break
+		}
+		songs = append(songs, song)
+		idx += 1
+	}
+
+	// parse remaining items as Votes
+	votes := []Votes{}
+	for _, item := range items[idx:] {
+		vote, err := item.toVotes()
+		if err != nil {
+			return ThemeItems{}, err
+		}
+		votes = append(votes, vote)
+	}
+
+	return ThemeItems{
+		Id:    themeId,
+		Songs: songs,
+		Votes: votes,
+	}, nil
+
+	// try to parse the first item as Votes
+	// songs := []Song{}
+	// votes, err := items[0].toVotes()
+	// if err != nil {
+	// 	votes = Votes{}
+	// 	// try to parse the first item as Song
+	// 	var songItem MxtpItem
+	// 	songItem, items = items[0], items[1:]
+	// 	song, err := songItem.toSong()
+	// 	if err != nil {
+	// 		return []Song{}, Votes{}, errors.New("Failed to parse first Theme item as Votes or Song")
+	// 	}
+	// 	songs = append(songs, song)
+	// }
+
+	// // iterate through remaining songs
+	// for _, item := range items[1:] {
+	// 	song, err := item.toSong()
+	// 	if err != nil {
+	// 		fmt.Printf("WARNING: Failed to parse item as song (skipped): %+v\n", item)
+	// 		continue
+	// 	}
+	// 	songs = append(songs, song)
+	// }
+
+	// return songs, votes, nil
+}
+
+func (db *DB) UpdateSong(leagueName, themeId, userId, songUrl, submissionId string) error {
+	song := MxtpItem{
+		PK:           fmt.Sprintf("league#%v#theme#%v", leagueName, themeId),
+		SK:           fmt.Sprintf("song#%v", userId),
+		UserId:       userId,
+		SongUrl:      songUrl,
+		SubmissionId: submissionId,
+	}
+
+	return db.table.Put(song).Run()
+}
+
+func (db *DB) UpdateVotes(leagueName, themeId, userId string, submissionIds []string) error {
+	song := MxtpItem{
+		PK:            fmt.Sprintf("league#%v#theme#%v", leagueName, themeId),
+		SK:            fmt.Sprintf("votes#%v", userId),
+		UserId:        userId,
+		SubmissionIds: submissionIds,
+	}
+
+	return db.table.Put(song).Run()
+}
+
+// func main() {
+// 	db, err := New()
+// 	if err != nil {
+// 		panic(err)
+// 	}
+
+// 	res1, err := db.GetLeague("devetry")
+// 	if err != nil {
+// 		panic(err)
+// 	}
+// 	fmt.Printf("%+v\n", res1)
+
+// 	res2, err := db.GetSong("devetry", "2020-05-18", "ted@devetry.com")
+// 	if err != nil {
+// 		panic(err)
+// 	}
+// 	fmt.Printf("%+v\n", res2)
+
+// 	items, err := db.GetThemeItems("devetry", "2020-05-04")
+// 	if err != nil {
+// 		panic(err)
+// 	}
+// 	fmt.Printf("%+v\n", items)
+
+// 	err = db.UpdateSong("devetry", "2020-05-18", "ted@devetry.com", "http://www.youtube.com/hello", uuid.New().String())
+// 	if err != nil {
+// 		panic(err)
+// 	}
+
+// 	res2, err = db.GetSong("devetry", "2020-05-18", "ted@devetry.com")
+// 	if err != nil {
+// 		panic(err)
+// 	}
+// 	fmt.Printf("%+v\n", res2)
+
+// 	err = db.UpdateVotes("devetry", "2020-05-04", "ted@devetry.com", []string{"qwerty"})
+// 	if err != nil {
+// 		panic(err)
+// 	}
+
+// 	items, err = db.GetThemeItems("devetry", "2020-05-04")
+// 	if err != nil {
+// 		panic(err)
+// 	}
+// 	fmt.Printf("%+v\n", items)
+// }

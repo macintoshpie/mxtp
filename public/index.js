@@ -1,8 +1,7 @@
 import {
-  getLeagueAndThemes,
-  getThemeAndSubmissions,
   updateVotes,
   updateSubmission,
+  getCurrentGame,
 } from './client.js'
 
 const state = {
@@ -11,7 +10,8 @@ const state = {
   Themes: [],
   SubmitTheme: {},
   VoteTheme: {},
-  VoteThemeSubmissions: [],
+  VoteThemeSongs: [],
+  VoteThemeVotes: [],
   warnings: {
     'warn-card-username': false,
     'warn-card-fetching': false,
@@ -27,32 +27,30 @@ const
 window.onload = async () => {
   // setup the page
   document.getElementById('who-submit').addEventListener('click', setUser)
+  document.getElementById('submit-theme-form-submit').addEventListener('click', sendSubmission)
+  document.getElementById('vote-theme-form-submit').addEventListener('click', sendVotes)
+}
 
+const loadGameData = async () => {
   addWarning(WARN_FETCHING)
-  getLeagueAndThemes("devetry")
-    .then(res => {
-      if ('error' in res) {
-        addWarning(WARN_FETCH_FAILED)
-        removeWarning(WARN_FETCHING)
-        throw res
-      }
-      state.League = res.League
-      state.Themes = res.Themes
-      state.SubmitTheme = res.SubmitTheme
-      state.VoteTheme = res.VoteTheme
-      return getThemeAndSubmissions("devetry", state.VoteTheme.Id)
-    })
-    .then(res => {
-      if ('error' in res) {
-        addWarning(WARN_FETCH_FAILED)
-        removeWarning(WARN_FETCHING)
-        throw res
-      }
-      state.VoteThemeSubmissions = res.Submissions
-      removeWarning(WARN_FETCHING)
 
-      renderCards()
-    })
+  const response = await getCurrentGame("devetry", state.user.username);
+  debugger;
+  if ('error' in response) {
+    addWarning(WARN_FETCH_FAILED)
+    removeWarning(WARN_FETCHING)
+    throw response
+  }
+
+  state.League = response.League
+  state.SubmitTheme = state.League.SubmitTheme
+  state.SubmitThemeSong = response.SubmitThemeItems.Songs[0]
+  state.VoteTheme = state.League.VoteTheme
+  state.VoteThemeSongs = response.VoteThemeItems.Songs
+  state.VoteThemeVotes = response.VoteThemeItems.Votes[0]
+  
+  removeWarning(WARN_FETCHING)
+  renderCards()
 }
 
 const addWarning = (warning) => {
@@ -69,31 +67,38 @@ const renderCards = () => {
   // render submit theme card
   document.getElementById('submit-theme-name').innerText = state.SubmitTheme.Name
   document.getElementById('submit-theme-desc').innerText = state.SubmitTheme.Description
-  document.getElementById('submit-theme-form-submit').addEventListener('click', sendSubmission)
+  if (state.SubmitThemeSong != undefined) {
+    document.getElementById('submit-theme-form-input').value = state.SubmitThemeSong.SongUrl
+  } else {
+    document.getElementById('submit-theme-form-input').value = ""
+  }
 
   // render vote theme card
   document.getElementById('vote-theme-name').innerText = state.VoteTheme.Name
   document.getElementById('vote-theme-desc').innerText = state.VoteTheme.Description
   const voteThemeForm = document.getElementById('vote-theme-form')
-  if (state.VoteThemeSubmissions.length > 0) {
+  // remove any preexisting form checkboxes (can happen if reset user name)
+  Array.from(voteThemeForm.getElementsByClassName('vote-theme-form-item')).forEach(e => e.remove())
+  if (state.VoteThemeSongs.length > 0) {
     // create a checkbox for each submission
-    state.VoteThemeSubmissions.forEach(sub => {
+    state.VoteThemeSongs.forEach(sub => {
       const subLabel = document.createElement('label')
-      subLabel.for = sub.UserId
+      subLabel.for = sub.SubmissionId
       subLabel.innerText = sub.SongUrl
       voteThemeForm.appendChild(subLabel)
 
       const subInput = document.createElement('input')
       subInput.type = 'checkbox'
-      subInput.id = sub.UserId
-      subInput.value = sub.UserId
+      subInput.id = sub.SubmissionId
+      subInput.value = sub.SubmissionId
+      subInput.checked = state.VoteThemeVotes.SubmissionIds && state.VoteThemeVotes.SubmissionIds.includes(sub.SubmissionId)
 
       const subContainer = document.createElement('span')
       subContainer.classList.add('columnar-form-item')
+      subContainer.classList.add('vote-theme-form-item')
       subContainer.append(subInput, subLabel)
       voteThemeForm.prepend(subContainer)
     })
-    document.getElementById('vote-theme-form-submit').addEventListener('click', sendVotes)
   } else {
     voteThemeForm.innerText = 'No submissions to vote on...'
   }
@@ -118,6 +123,9 @@ const setUser = () => {
   const username = whoInput.value.toLowerCase()
   whoInput.value = username
   if (userRegex.test(username)) {
+    if (username == state.user.username) {
+      return
+    }
     state.user.username = username
     removeWarning(WARN_USERNAME)
   } else {
@@ -126,6 +134,9 @@ const setUser = () => {
   }
 
   hideOrDisplay()
+  if (state.user.username) {
+    loadGameData()
+  }
 }
 
 const buttonLoading = async (btn, res) => {
@@ -151,12 +162,12 @@ const buttonLoading = async (btn, res) => {
 const sendSubmission = () => {
   const songUrl = document.getElementById('submit-theme-form-input').value
   const btn = document.getElementById('submit-theme-form-submit')
-  buttonLoading(btn, updateSubmission(state.user, state.League.Name, state.SubmitTheme.Id, songUrl))
+  buttonLoading(btn, updateSubmission(state.user, state.League.Name, state.SubmitTheme.Date, songUrl))
 }
 
 const sendVotes = () => {
   const checkedVotes = Array.from(document.querySelectorAll('input[type="checkbox"]:checked'))
   const voteIds = checkedVotes.map(x => x.id)
   const btn = document.getElementById('vote-theme-form-submit')
-  buttonLoading(btn, updateVotes(state.user, state.League.Name, state.VoteTheme.Id, voteIds))
+  buttonLoading(btn, updateVotes(state.user, state.League.Name, state.VoteTheme.Date, voteIds))
 }
