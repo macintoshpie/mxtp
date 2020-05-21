@@ -291,8 +291,8 @@ func callbackHandler(parameters map[string]string, request events.APIGatewayProx
 	data.Set("grant_type", "authorization_code")
 	data.Set("code", code)
 	data.Set("redirect_uri", CALLBACK_URI)
-	data.Set("client_id", os.Getenv("SPOTIFY_CLIENT_ID"))
-	data.Set("client_secret", os.Getenv("SPOTIFY_CLIENT_SECRET"))
+	data.Set("client_id", os.Getenv("SPOTIFY_ID"))
+	data.Set("client_secret", os.Getenv("SPOTIFY_SECRET"))
 
 	client := &http.Client{}
 	r, _ := http.NewRequest("POST", spotifyTokenEndpoint, strings.NewReader(data.Encode())) // URL-encoded payload
@@ -333,7 +333,7 @@ func callbackHandler(parameters map[string]string, request events.APIGatewayProx
 
 func authorizeSpotifyHandler(parameters map[string]string, request events.APIGatewayProxyRequest) *events.APIGatewayProxyResponse {
 	var queryParams url.Values = url.Values{}
-	queryParams.Add("client_id", os.Getenv("SPOTIFY_CLIENT_ID"))
+	queryParams.Add("client_id", os.Getenv("SPOTIFY_ID"))
 	queryParams.Add("response_type", "code")
 	queryParams.Add("redirect_uri", CALLBACK_URI)
 	queryParams.Add("scope", "playlist-modify-public")
