@@ -134,7 +134,23 @@ func postSongsHandler(parameters map[string]string, request events.APIGatewayPro
 		return newMessageResponse(400, "Bad song").toAPIGatewayProxyResponse()
 	}
 
-	err = db.UpdateSong(leagueName, themeId, username, song.SongUrl, uuid.New().String())
+	parsedUrl, err := url.Parse(song.SongUrl)
+	if err != nil {
+		fmt.Println("ERROR: failed to parse song url: ", err.Error())
+		return newMessageResponse(400, "Bad song").toAPIGatewayProxyResponse()
+	}
+
+	// TODO: use a regex to grab the track ID (and make sure it's a track resource)
+	// TODO: consider making request to spotify to verify track ID
+	song.SpotifyTrackId = ""
+	if parsedUrl.Host == "open.spotify.com" {
+		pathParts := strings.Split(parsedUrl.Path, "/")
+		if len(pathParts) > 0 {
+			song.SpotifyTrackId = pathParts[len(pathParts)-1]
+		}
+	}
+
+	err = db.UpdateSong(leagueName, themeId, username, song.SongUrl, uuid.New().String(), song.SpotifyTrackId)
 	if err != nil {
 		fmt.Println("ERROR: failed to put submission: ", err.Error())
 		return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
@@ -385,7 +401,8 @@ func postBuildPlaylistHandler(parameters map[string]string, request events.APIGa
 	}
 
 	// update the playlist description
-	err = client.ChangePlaylistDescription(playlistId, league.SubmitTheme.Description)
+	themeDescription := fmt.Sprintf("%v - %v", league.SubmitTheme.Name, league.SubmitTheme.Description)
+	err = client.ChangePlaylistDescription(playlistId, themeDescription)
 	if err != nil {
 		fmt.Println("ERROR: ", err.Error())
 		return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()

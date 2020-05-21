@@ -356,13 +356,14 @@ func (db *DB) GetThemeItems(leagueName, themeId string) (ThemeItems, error) {
 	// return songs, votes, nil
 }
 
-func (db *DB) UpdateSong(leagueName, themeId, userId, songUrl, submissionId string) error {
+func (db *DB) UpdateSong(leagueName, themeId, userId, songUrl, submissionId, spotifyTrackId string) error {
 	song := MxtpItem{
-		PK:           fmt.Sprintf("league#%v#theme#%v", leagueName, themeId),
-		SK:           fmt.Sprintf("song#%v", userId),
-		UserId:       userId,
-		SongUrl:      songUrl,
-		SubmissionId: submissionId,
+		PK:             fmt.Sprintf("league#%v#theme#%v", leagueName, themeId),
+		SK:             fmt.Sprintf("song#%v", userId),
+		UserId:         userId,
+		SongUrl:        songUrl,
+		SubmissionId:   submissionId,
+		SpotifyTrackId: spotifyTrackId,
 	}
 
 	return db.table.Put(song).Run()
