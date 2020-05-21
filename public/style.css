@@ -28,6 +28,7 @@ button:active:enabled {
 
 input[type="text"] {
   height: 2em;
+  width: 18em;
 }
 
 h1, h2, h3 {
@@ -36,6 +37,10 @@ h1, h2, h3 {
 
 .btn-success, .btn-success:hover, .btn-success:hover:enabled {
   background-color: rgb(88, 231, 100);
+}
+
+.btn-error, .btn-error:hover, .btn-error:hover:enabled {
+  background-color: rgb(231, 88, 88);
 }
 
 .container {

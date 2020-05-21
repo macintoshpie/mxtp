@@ -159,10 +159,22 @@ const buttonLoading = async (btn, res) => {
   return res
 }
 
+const songRegex = /(http|https):\/\/open.spotify.com\/track\/.+/
 const sendSubmission = () => {
-  const songUrl = document.getElementById('submit-theme-form-input').value
+  let songUrl = document.getElementById('submit-theme-form-input').value
   const btn = document.getElementById('submit-theme-form-submit')
-  buttonLoading(btn, updateSubmission(state.user, state.League.Name, state.SubmitTheme.Date, songUrl))
+  if (songRegex.test(songUrl)) {
+    buttonLoading(btn, updateSubmission(state.user, state.League.Name, state.SubmitTheme.Date, songUrl))
+  } else {
+    // this is bad and can break things
+    const originalText = btn.innerText
+    btn.innerText = 'bad url'
+    btn.classList.add('btn-error')
+    setTimeout(() => {
+      btn.innerText = originalText
+      btn.classList.remove('btn-error')
+    }, 2000)
+  }
 }
 
 const sendVotes = () => {

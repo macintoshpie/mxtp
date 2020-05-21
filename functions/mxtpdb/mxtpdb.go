@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/guregu/dynamo"
+	"golang.org/x/oauth2"
 )
 
 type DB struct {
@@ -18,23 +20,31 @@ type DB struct {
 }
 
 type MxtpItem struct {
-	PK            string
-	SK            string
-	Name          string   `dynamo:",omitempty"`
-	Date          string   `dynamo:",omitempty"`
-	Description   string   `dynamo:",omitempty"`
-	UserId        string   `dynamo:",omitempty"`
-	SubmissionId  string   `dynamo:",omitempty"`
-	SubmissionIds []string `dynamo:",omitempty,set"`
-	SongUrl       string   `dynamo:",omitempty"`
-	Role          string   `dynamo:",omitempty"`
+	PK                string
+	SK                string
+	Name              string   `dynamo:",omitempty"`
+	Date              string   `dynamo:",omitempty"`
+	Description       string   `dynamo:",omitempty"`
+	SpotifyPlaylistId string   `dynamo:",omitempty"`
+	UserId            string   `dynamo:",omitempty"`
+	SubmissionId      string   `dynamo:",omitempty"`
+	SubmissionIds     []string `dynamo:",omitempty,set"`
+	SongUrl           string   `dynamo:",omitempty"`
+	SpotifyTrackId    string   `dynamo:",omitempty"`
+	Role              string   `dynamo:",omitempty"`
+
+	AccessToken  string    `dynamo:",omitempty"`
+	TokenType    string    `dynamo:",omitempty"`
+	RefreshToken string    `dynamo:",omitempty"`
+	Expiry       time.Time `dynamo:",omitempty"`
 }
 
 type League struct {
-	Name        string `dynamo:",omitempty"`
-	Description string `dynamo:",omitempty"`
-	SubmitTheme Theme  `dynamo:",omitempty"`
-	VoteTheme   Theme  `dynamo:",omitempty"`
+	Name              string `dynamo:",omitempty"`
+	Description       string `dynamo:",omitempty"`
+	SubmitTheme       Theme  `dynamo:",omitempty"`
+	VoteTheme         Theme  `dynamo:",omitempty"`
+	SpotifyPlaylistId string `dynamo:",omitempty"`
 }
 
 type Theme struct {
@@ -50,9 +60,10 @@ type ThemeItems struct {
 }
 
 type Song struct {
-	UserId       string `dynamo:",omitempty"`
-	SubmissionId string `dynamo:",omitempty"`
-	SongUrl      string `dynamo:",omitempty"`
+	UserId         string `dynamo:",omitempty"`
+	SubmissionId   string `dynamo:",omitempty"`
+	SongUrl        string `dynamo:",omitempty"`
+	SpotifyTrackId string `dynamo:",omitempty"`
 }
 
 type Votes struct {
@@ -96,10 +107,11 @@ func (item *MxtpItem) toLeague() (League, error) {
 	}
 
 	return League{
-		Name:        item.Name,
-		Description: item.Description,
-		SubmitTheme: Theme{},
-		VoteTheme:   Theme{},
+		Name:              item.Name,
+		Description:       item.Description,
+		SpotifyPlaylistId: item.SpotifyPlaylistId,
+		SubmitTheme:       Theme{},
+		VoteTheme:         Theme{},
 	}, nil
 }
 
@@ -134,9 +146,10 @@ func (item *MxtpItem) toSong() (Song, error) {
 	}
 
 	return Song{
-		UserId:       item.UserId,
-		SubmissionId: item.SubmissionId,
-		SongUrl:      item.SongUrl,
+		UserId:         item.UserId,
+		SubmissionId:   item.SubmissionId,
+		SongUrl:        item.SongUrl,
+		SpotifyTrackId: item.SpotifyTrackId,
 	}, nil
 }
 
@@ -154,6 +167,20 @@ func (item *MxtpItem) toVotes() (Votes, error) {
 	return Votes{
 		UserId:        item.UserId,
 		SubmissionIds: item.SubmissionIds,
+	}, nil
+}
+
+func (item *MxtpItem) toOAuthToken() (*oauth2.Token, error) {
+	err := validateCompoundKey(item.PK, "secret")
+	if err != nil {
+		return &oauth2.Token{}, err
+	}
+
+	return &oauth2.Token{
+		AccessToken:  item.AccessToken,
+		TokenType:    item.TokenType,
+		RefreshToken: item.RefreshToken,
+		Expiry:       item.Expiry,
 	}, nil
 }
 
@@ -350,6 +377,35 @@ func (db *DB) UpdateVotes(leagueName, themeId, userId string, submissionIds []st
 	}
 
 	return db.table.Put(song).Run()
+}
+
+func (db *DB) GetSpotifyToken(userId string) (*oauth2.Token, error) {
+	var item MxtpItem
+	err := db.table.Get("PK", fmt.Sprintf("secret#%v", userId)).
+		Range("SK", dynamo.Equal, "spotify").
+		One(&item)
+	if err != nil {
+		return nil, err
+	}
+
+	token, err := item.toOAuthToken()
+	if err != nil {
+		return nil, err
+	}
+	return token, nil
+}
+
+func (db *DB) UpdateSpotifyToken(token *oauth2.Token, userId string) error {
+	tokenItem := MxtpItem{
+		PK:           fmt.Sprintf("secret#%v", userId),
+		SK:           "spotify",
+		AccessToken:  token.AccessToken,
+		TokenType:    token.TokenType,
+		RefreshToken: token.RefreshToken,
+		Expiry:       token.Expiry,
+	}
+
+	return db.table.Put(tokenItem).Run()
 }
 
 // func main() {

@@ -16,6 +16,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/macintoshpie/mxtp-fx/bouncer"
 	"github.com/macintoshpie/mxtp-fx/mxtpdb"
+	"github.com/zmb3/spotify"
+	"golang.org/x/oauth2"
 )
 
 const CALLBACK_URI = "https://www.mxtp.xyz/.netlify/functions/jockey/callback"
@@ -307,8 +309,26 @@ func callbackHandler(parameters map[string]string, request events.APIGatewayProx
 		return newMessageResponse(500, err.Error()).toAPIGatewayProxyResponse()
 	}
 
-	fmt.Println("Got body: ", string(fullBody))
-	return newMessageResponse(200, "Hello world").toAPIGatewayProxyResponse()
+	var token oauth2.Token
+	err = json.Unmarshal(fullBody, &token)
+	if err != nil {
+		fmt.Println("Error: ", err.Error())
+		return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
+	}
+
+	// update the token in the database
+	db, err := mxtpdb.New()
+	if err != nil {
+		fmt.Println("ERROR: ", err.Error())
+		return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
+	}
+	err = db.UpdateSpotifyToken(&token, "ted@devetry.com")
+	if err != nil {
+		fmt.Println("ERROR: ", err.Error())
+		return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
+	}
+
+	return newMessageResponse(200, "Success").toAPIGatewayProxyResponse()
 }
 
 func authorizeSpotifyHandler(parameters map[string]string, request events.APIGatewayProxyRequest) *events.APIGatewayProxyResponse {
@@ -316,7 +336,7 @@ func authorizeSpotifyHandler(parameters map[string]string, request events.APIGat
 	queryParams.Add("client_id", os.Getenv("SPOTIFY_CLIENT_ID"))
 	queryParams.Add("response_type", "code")
 	queryParams.Add("redirect_uri", CALLBACK_URI)
-	queryParams.Add("scope", "user-read-private user-read-email")
+	queryParams.Add("scope", "playlist-modify-public")
 
 	headers := make(map[string]string)
 	headers["Location"] = fmt.Sprintf("https://accounts.spotify.com/authorize?%v", queryParams.Encode())
@@ -324,6 +344,94 @@ func authorizeSpotifyHandler(parameters map[string]string, request events.APIGat
 		StatusCode: 302,
 		Headers:    headers,
 	}
+}
+
+func postBuildPlaylistHandler(parameters map[string]string, request events.APIGatewayProxyRequest) *events.APIGatewayProxyResponse {
+	if _, ok := parameters["ADMIN"]; !ok {
+		return &events.APIGatewayProxyResponse{
+			StatusCode: 400,
+			Body:       "Unauthorized",
+		}
+	}
+
+	// get the playlist id
+	leagueName := parameters["leagueName"]
+	if leagueName == "" {
+		fmt.Println("ERROR: Parameter 'leagueName' not found")
+		return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
+	}
+	db, err := mxtpdb.New()
+	if err != nil {
+		fmt.Println("ERROR: ", err.Error())
+		return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
+	}
+	league, err := db.GetLeague(leagueName)
+	if err != nil {
+		fmt.Println("ERROR: ", err.Error())
+		return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
+	}
+	if league.SpotifyPlaylistId == "" {
+		fmt.Println("ERROR: league's spotify playlist id does not exist")
+		return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
+	}
+	playlistId := spotify.ID(league.SpotifyPlaylistId)
+
+	// setup our spotify client
+	// TODO: hardcoded my id, once using user roles we can actually get clients by users
+	client, err := NewClient(db, "ted@devetry.com")
+	if err != nil {
+		fmt.Println("ERROR: ", err.Error())
+		return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
+	}
+
+	// update the playlist description
+	err = client.ChangePlaylistDescription(playlistId, league.SubmitTheme.Description)
+	if err != nil {
+		fmt.Println("ERROR: ", err.Error())
+		return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
+	}
+
+	// get existing track IDs so we can remove them from the playlist
+	trackPage, err := client.GetPlaylistTracks(playlistId)
+	if err != nil {
+		fmt.Println("ERROR: ", err.Error())
+		return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
+	}
+
+	var existingTrackIDs []spotify.ID
+	for _, playlistTrack := range trackPage.Tracks {
+		existingTrackIDs = append(existingTrackIDs, playlistTrack.Track.SimpleTrack.ID)
+	}
+
+	if len(existingTrackIDs) > 0 {
+		_, err := client.RemoveTracksFromPlaylist(playlistId, existingTrackIDs...)
+		if err != nil {
+			fmt.Println("ERROR: ", err.Error())
+			return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
+		}
+	}
+
+	// add new tracks to the playlist
+	themeItems, err := db.GetThemeItems(league.Name, league.SubmitTheme.Date)
+	if err != nil {
+		fmt.Println("ERROR: ", err.Error())
+		return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
+	}
+	var newTrackIDs []spotify.ID
+	for _, song := range themeItems.Songs {
+		if song.SpotifyTrackId != "" {
+			newTrackIDs = append(newTrackIDs, spotify.ID(song.SpotifyTrackId))
+		}
+	}
+	if len(newTrackIDs) > 0 {
+		_, err := client.AddTracksToPlaylist(playlistId, newTrackIDs...)
+		if err != nil {
+			fmt.Println("ERROR: ", err.Error())
+			return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
+		}
+	}
+
+	return newMessageResponse(200, "Successfully updated playlist").toAPIGatewayProxyResponse()
 }
 
 func JockeyHandler(request events.APIGatewayProxyRequest) (*events.APIGatewayProxyResponse, error) {
@@ -339,6 +447,7 @@ func JockeyHandler(request events.APIGatewayProxyRequest) (*events.APIGatewayPro
 
 	b := bouncer.New("/.netlify/functions/jockey")
 
+	b.Handle(bouncer.Post, "/leagues/{leagueName}/buildPlaylist", authMiddleware(postBuildPlaylistHandler))
 	b.Handle(bouncer.Post, "/leagues/{leagueName}/themes/{themeId}/songs", authMiddleware(postSongsHandler))
 	b.Handle(bouncer.Post, "/leagues/{leagueName}/themes/{themeId}/votes", authMiddleware(postVotesHandler))
 	b.Handle(bouncer.Get, "/leagues/{leagueName}/games/{gameId}", authMiddleware(getGamesHandler))
