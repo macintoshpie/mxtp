@@ -18,12 +18,22 @@ import (
 	"github.com/zmb3/spotify"
 )
 
-const CALLBACK_URI = "https://www.mxtp.xyz/.netlify/functions/jockey/callback"
+var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+func randSeq(n int) string {
+	rand.Seed(time.Now().UnixNano())
+	b := make([]rune, n)
+	for i := range b {
+		b[i] = letters[rand.Intn(len(letters))]
+	}
+	return string(b)
+}
 
 type Game struct {
 	League           mxtpdb.League
 	SubmitThemeItems mxtpdb.ThemeItems
 	VoteThemeItems   mxtpdb.ThemeItems
+	SpotifyAuthUrl   string
 }
 
 type jsonResponse struct {
@@ -280,11 +290,27 @@ func getGamesHandler(parameters map[string]string, request events.APIGatewayProx
 	}
 	voteThemeItems.Votes = []mxtpdb.Votes{userVotes}
 
+	// TODO: change this to check if the requesting user is admin of league? Also this shouldn't be a part of the Games response...
+	// maybe not necessary if they auth when creating league, but helpful for now I suppose
+	spotifyAuthUrl := ""
+	if username == "ted@devetry.com" {
+		// generate an auth url
+		state := randSeq(30)
+		err = db.UpdateUserState(username, state)
+		if err != nil {
+			fmt.Println("ERROR: failed to update user state: ", err.Error())
+			return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
+		}
+
+		spotifyAuthUrl = Auth.AuthURL(state)
+	}
+
 	response := jsonResponse{
 		content: Game{
 			League:           league,
 			SubmitThemeItems: submitThemeItems,
 			VoteThemeItems:   voteThemeItems,
+			SpotifyAuthUrl:   spotifyAuthUrl,
 		},
 		status: 200,
 	}
@@ -321,106 +347,6 @@ func callbackHandler(parameters map[string]string, request events.APIGatewayProx
 	}
 
 	return newMessageResponse(200, "Success").toAPIGatewayProxyResponse()
-
-	// fmt.Printf("Got query params: %+v\n", request.QueryStringParameters)
-	// code := request.QueryStringParameters["code"]
-	// // state := request.QueryStringParameters["state"]
-	// if errorParam, ok := request.QueryStringParameters["error"]; ok {
-	// 	fmt.Println("Got an error param: ", errorParam)
-	// }
-
-	// spotifyTokenEndpoint := "https://accounts.spotify.com/api/token"
-	// data := url.Values{}
-	// data.Set("grant_type", "authorization_code")
-	// data.Set("code", code)
-	// data.Set("redirect_uri", CALLBACK_URI)
-	// data.Set("client_id", os.Getenv("SPOTIFY_ID"))
-	// data.Set("client_secret", os.Getenv("SPOTIFY_SECRET"))
-
-	// client := &http.Client{}
-	// r, _ := http.NewRequest("POST", spotifyTokenEndpoint, strings.NewReader(data.Encode())) // URL-encoded payload
-	// r.Header.Add("Content-Type", "application/x-www-form-urlencoded")
-	// r.Header.Add("Content-Length", strconv.Itoa(len(data.Encode())))
-
-	// resp, err := client.Do(r)
-	// if err != nil {
-	// 	return newMessageResponse(500, err.Error()).toAPIGatewayProxyResponse()
-	// }
-
-	// fullBody, err := ioutil.ReadAll(resp.Body)
-	// if err != nil {
-	// 	return newMessageResponse(500, err.Error()).toAPIGatewayProxyResponse()
-	// }
-
-	// var token oauth2.Token
-	// err = json.Unmarshal(fullBody, &token)
-	// if err != nil {
-	// 	fmt.Println("Error: ", err.Error())
-	// 	return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
-	// }
-
-	// // update the token in the database
-	// db, err := mxtpdb.New()
-	// if err != nil {
-	// 	fmt.Println("ERROR: ", err.Error())
-	// 	return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
-	// }
-	// err = db.UpdateSpotifyToken(&token, "ted@devetry.com")
-	// if err != nil {
-	// 	fmt.Println("ERROR: ", err.Error())
-	// 	return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
-	// }
-
-	// return newMessageResponse(200, "Success").toAPIGatewayProxyResponse()
-}
-
-var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
-
-func randSeq(n int) string {
-	rand.Seed(time.Now().UnixNano())
-	b := make([]rune, n)
-	for i := range b {
-		b[i] = letters[rand.Intn(len(letters))]
-	}
-	return string(b)
-}
-
-func authorizeSpotifyHandler(parameters map[string]string, request events.APIGatewayProxyRequest) *events.APIGatewayProxyResponse {
-	// var queryParams url.Values = url.Values{}
-	// queryParams.Add("client_id", os.Getenv("SPOTIFY_ID"))
-	// queryParams.Add("response_type", "code")
-	// queryParams.Add("redirect_uri", CALLBACK_URI)
-	// queryParams.Add("scope", "playlist-modify-public")
-
-	headers := make(map[string]string)
-
-	// This is baad, need proper auth...
-	username := parameters["username"]
-	if username == "" {
-		return newMessageResponse(400, "Invalid Authorization header").toAPIGatewayProxyResponse()
-	}
-
-	state := randSeq(30)
-	// save the state to the users secrets
-	db, err := mxtpdb.New()
-	if err != nil {
-		fmt.Println("ERROR: ", err.Error())
-		return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
-	}
-
-	err = db.UpdateUserState(username, state)
-	if err != nil {
-		fmt.Println("ERROR: failed to update user state: ", err.Error())
-		return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
-	}
-
-	url := Auth.AuthURL(state)
-	// headers["Location"] = fmt.Sprintf("https://accounts.spotify.com/authorize?%v", queryParams.Encode())
-	headers["Location"] = url
-	return &events.APIGatewayProxyResponse{
-		StatusCode: 302,
-		Headers:    headers,
-	}
 }
 
 func postBuildPlaylistHandler(parameters map[string]string, request events.APIGatewayProxyRequest) *events.APIGatewayProxyResponse {
@@ -526,7 +452,6 @@ func JockeyHandler(request events.APIGatewayProxyRequest) (*events.APIGatewayPro
 	b.Handle(bouncer.Post, "/leagues/{leagueName}/themes/{themeId}/songs", authMiddleware(postSongsHandler))
 	b.Handle(bouncer.Post, "/leagues/{leagueName}/themes/{themeId}/votes", authMiddleware(postVotesHandler))
 	b.Handle(bouncer.Get, "/leagues/{leagueName}/games/{gameId}", authMiddleware(getGamesHandler))
-	b.Handle(bouncer.Get, "/spotify", authMiddleware(authorizeSpotifyHandler))
 	b.Handle(bouncer.Get, "/callback", authMiddleware(callbackHandler))
 
 	return b.Route(request)

@@ -35,7 +35,6 @@ const loadGameData = async () => {
   addWarning(WARN_FETCHING)
 
   const response = await getCurrentGame("devetry", state.user.username);
-  debugger;
   if ('error' in response) {
     addWarning(WARN_FETCH_FAILED)
     removeWarning(WARN_FETCHING)
@@ -48,6 +47,7 @@ const loadGameData = async () => {
   state.VoteTheme = state.League.VoteTheme
   state.VoteThemeSongs = response.VoteThemeItems.Songs
   state.VoteThemeVotes = response.VoteThemeItems.Votes[0]
+  state.SpotifyAuthUrl = response.SpotifyAuthUrl
   
   removeWarning(WARN_FETCHING)
   renderCards()
@@ -101,6 +101,13 @@ const renderCards = () => {
     })
   } else {
     voteThemeForm.innerText = 'No submissions to vote on...'
+  }
+
+  // render the spotify link
+  if (state.SpotifyAuthUrl !== '' && state.SpotifyAuthUrl != undefined) {
+    const spotifyLink = document.getElementById('spotify-auth-link')
+    spotifyLink.href = state.SpotifyAuthUrl
+    spotifyLink.hidden = false
   }
 }
 
