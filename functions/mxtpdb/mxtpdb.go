@@ -37,6 +37,8 @@ type MxtpItem struct {
 	TokenType    string    `dynamo:",omitempty"`
 	RefreshToken string    `dynamo:",omitempty"`
 	Expiry       time.Time `dynamo:",omitempty"`
+
+	State string `dynamo:",omitempty"`
 }
 
 type League struct {
@@ -404,6 +406,28 @@ func (db *DB) UpdateSpotifyToken(token *oauth2.Token, userId string) error {
 		TokenType:    token.TokenType,
 		RefreshToken: token.RefreshToken,
 		Expiry:       token.Expiry,
+	}
+
+	return db.table.Put(tokenItem).Run()
+}
+
+func (db *DB) GetUserFromState(state string) (string, error) {
+	var item MxtpItem
+	err := db.table.Get("PK", fmt.Sprintf("state#%v", state)).
+		Range("SK", dynamo.Equal, "state").
+		One(&item)
+	if err != nil {
+		return "", err
+	}
+
+	return item.UserId, nil
+}
+
+func (db *DB) UpdateUserState(userId, state string) error {
+	tokenItem := MxtpItem{
+		PK:     fmt.Sprintf("state#%v", state),
+		SK:     "state",
+		UserId: userId,
 	}
 
 	return db.table.Put(tokenItem).Run()

@@ -4,12 +4,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"net/http"
+	"math/rand"
 	"net/url"
 	"os"
-	"strconv"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
@@ -17,7 +16,6 @@ import (
 	"github.com/macintoshpie/mxtp-fx/bouncer"
 	"github.com/macintoshpie/mxtp-fx/mxtpdb"
 	"github.com/zmb3/spotify"
-	"golang.org/x/oauth2"
 )
 
 const CALLBACK_URI = "https://www.mxtp.xyz/.netlify/functions/jockey/callback"
@@ -295,67 +293,130 @@ func getGamesHandler(parameters map[string]string, request events.APIGatewayProx
 }
 
 func callbackHandler(parameters map[string]string, request events.APIGatewayProxyRequest) *events.APIGatewayProxyResponse {
-	fmt.Printf("Got query params: %+v\n", request.QueryStringParameters)
 	code := request.QueryStringParameters["code"]
-	// state := request.QueryStringParameters["state"]
-	if errorParam, ok := request.QueryStringParameters["error"]; ok {
-		fmt.Println("Got an error param: ", errorParam)
+	state := request.QueryStringParameters["state"]
+	if code == "" || state == "" {
+		return newMessageResponse(500, "Missing code or state in request query params").toAPIGatewayProxyResponse()
 	}
 
-	spotifyTokenEndpoint := "https://accounts.spotify.com/api/token"
-	data := url.Values{}
-	data.Set("grant_type", "authorization_code")
-	data.Set("code", code)
-	data.Set("redirect_uri", CALLBACK_URI)
-	data.Set("client_id", os.Getenv("SPOTIFY_ID"))
-	data.Set("client_secret", os.Getenv("SPOTIFY_SECRET"))
-
-	client := &http.Client{}
-	r, _ := http.NewRequest("POST", spotifyTokenEndpoint, strings.NewReader(data.Encode())) // URL-encoded payload
-	r.Header.Add("Content-Type", "application/x-www-form-urlencoded")
-	r.Header.Add("Content-Length", strconv.Itoa(len(data.Encode())))
-
-	resp, err := client.Do(r)
-	if err != nil {
-		return newMessageResponse(500, err.Error()).toAPIGatewayProxyResponse()
-	}
-
-	fullBody, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return newMessageResponse(500, err.Error()).toAPIGatewayProxyResponse()
-	}
-
-	var token oauth2.Token
-	err = json.Unmarshal(fullBody, &token)
-	if err != nil {
-		fmt.Println("Error: ", err.Error())
-		return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
-	}
-
-	// update the token in the database
+	// get the user associated with the state
 	db, err := mxtpdb.New()
 	if err != nil {
 		fmt.Println("ERROR: ", err.Error())
 		return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
 	}
-	err = db.UpdateSpotifyToken(&token, "ted@devetry.com")
+
+	username, err := db.GetUserFromState(state)
+	if err != nil || username == "" {
+		fmt.Println("ERROR: failed to get user: ", err.Error())
+		return newMessageResponse(400, "Unknown state provided").toAPIGatewayProxyResponse()
+	}
+
+	// exchange the code for a token and put it in the database
+	token, err := Auth.Exchange(code)
+	err = db.UpdateSpotifyToken(token, username)
+	if err != nil {
+		fmt.Println("ERROR: failed to update token: ", err.Error())
+		return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
+	}
+
+	return newMessageResponse(200, "Success").toAPIGatewayProxyResponse()
+
+	// fmt.Printf("Got query params: %+v\n", request.QueryStringParameters)
+	// code := request.QueryStringParameters["code"]
+	// // state := request.QueryStringParameters["state"]
+	// if errorParam, ok := request.QueryStringParameters["error"]; ok {
+	// 	fmt.Println("Got an error param: ", errorParam)
+	// }
+
+	// spotifyTokenEndpoint := "https://accounts.spotify.com/api/token"
+	// data := url.Values{}
+	// data.Set("grant_type", "authorization_code")
+	// data.Set("code", code)
+	// data.Set("redirect_uri", CALLBACK_URI)
+	// data.Set("client_id", os.Getenv("SPOTIFY_ID"))
+	// data.Set("client_secret", os.Getenv("SPOTIFY_SECRET"))
+
+	// client := &http.Client{}
+	// r, _ := http.NewRequest("POST", spotifyTokenEndpoint, strings.NewReader(data.Encode())) // URL-encoded payload
+	// r.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	// r.Header.Add("Content-Length", strconv.Itoa(len(data.Encode())))
+
+	// resp, err := client.Do(r)
+	// if err != nil {
+	// 	return newMessageResponse(500, err.Error()).toAPIGatewayProxyResponse()
+	// }
+
+	// fullBody, err := ioutil.ReadAll(resp.Body)
+	// if err != nil {
+	// 	return newMessageResponse(500, err.Error()).toAPIGatewayProxyResponse()
+	// }
+
+	// var token oauth2.Token
+	// err = json.Unmarshal(fullBody, &token)
+	// if err != nil {
+	// 	fmt.Println("Error: ", err.Error())
+	// 	return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
+	// }
+
+	// // update the token in the database
+	// db, err := mxtpdb.New()
+	// if err != nil {
+	// 	fmt.Println("ERROR: ", err.Error())
+	// 	return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
+	// }
+	// err = db.UpdateSpotifyToken(&token, "ted@devetry.com")
+	// if err != nil {
+	// 	fmt.Println("ERROR: ", err.Error())
+	// 	return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
+	// }
+
+	// return newMessageResponse(200, "Success").toAPIGatewayProxyResponse()
+}
+
+var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+func randSeq(n int) string {
+	rand.Seed(time.Now().UnixNano())
+	b := make([]rune, n)
+	for i := range b {
+		b[i] = letters[rand.Intn(len(letters))]
+	}
+	return string(b)
+}
+
+func authorizeSpotifyHandler(parameters map[string]string, request events.APIGatewayProxyRequest) *events.APIGatewayProxyResponse {
+	// var queryParams url.Values = url.Values{}
+	// queryParams.Add("client_id", os.Getenv("SPOTIFY_ID"))
+	// queryParams.Add("response_type", "code")
+	// queryParams.Add("redirect_uri", CALLBACK_URI)
+	// queryParams.Add("scope", "playlist-modify-public")
+
+	headers := make(map[string]string)
+
+	// This is baad, need proper auth...
+	username := parameters["username"]
+	if username == "" {
+		return newMessageResponse(400, "Invalid Authorization header").toAPIGatewayProxyResponse()
+	}
+
+	state := randSeq(30)
+	// save the state to the users secrets
+	db, err := mxtpdb.New()
 	if err != nil {
 		fmt.Println("ERROR: ", err.Error())
 		return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
 	}
 
-	return newMessageResponse(200, "Success").toAPIGatewayProxyResponse()
-}
+	err = db.UpdateUserState(username, state)
+	if err != nil {
+		fmt.Println("ERROR: failed to update user state: ", err.Error())
+		return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
+	}
 
-func authorizeSpotifyHandler(parameters map[string]string, request events.APIGatewayProxyRequest) *events.APIGatewayProxyResponse {
-	var queryParams url.Values = url.Values{}
-	queryParams.Add("client_id", os.Getenv("SPOTIFY_ID"))
-	queryParams.Add("response_type", "code")
-	queryParams.Add("redirect_uri", CALLBACK_URI)
-	queryParams.Add("scope", "playlist-modify-public")
-
-	headers := make(map[string]string)
-	headers["Location"] = fmt.Sprintf("https://accounts.spotify.com/authorize?%v", queryParams.Encode())
+	url := Auth.AuthURL(state)
+	// headers["Location"] = fmt.Sprintf("https://accounts.spotify.com/authorize?%v", queryParams.Encode())
+	headers["Location"] = url
 	return &events.APIGatewayProxyResponse{
 		StatusCode: 302,
 		Headers:    headers,
@@ -434,17 +495,14 @@ func postBuildPlaylistHandler(parameters map[string]string, request events.APIGa
 		fmt.Println("ERROR: ", err.Error())
 		return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
 	}
-	var newTrackIDs []spotify.ID
 	for _, song := range themeItems.Songs {
-		if song.SpotifyTrackId != "" {
-			newTrackIDs = append(newTrackIDs, spotify.ID(song.SpotifyTrackId))
+		if song.SpotifyTrackId == "" {
+			continue
 		}
-	}
-	if len(newTrackIDs) > 0 {
-		_, err := client.AddTracksToPlaylist(playlistId, newTrackIDs...)
+
+		_, err := client.AddTracksToPlaylist(playlistId, spotify.ID(song.SpotifyTrackId))
 		if err != nil {
-			fmt.Println("ERROR: ", err.Error())
-			return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
+			fmt.Printf("WARNING: skipping SubmissionId %v due to error: %v\n", song.SubmissionId, err.Error())
 		}
 	}
 
