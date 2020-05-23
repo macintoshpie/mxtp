@@ -31,6 +31,7 @@ type MxtpItem struct {
 	SubmissionIds     []string `dynamo:",omitempty,set"`
 	SongUrl           string   `dynamo:",omitempty"`
 	SpotifyTrackId    string   `dynamo:",omitempty"`
+	Artists           []string `dynamo:",omitempty"`
 	Role              string   `dynamo:",omitempty"`
 
 	AccessToken  string    `dynamo:",omitempty"`
@@ -62,10 +63,12 @@ type ThemeItems struct {
 }
 
 type Song struct {
-	UserId         string `dynamo:",omitempty"`
-	SubmissionId   string `dynamo:",omitempty"`
-	SongUrl        string `dynamo:",omitempty"`
-	SpotifyTrackId string `dynamo:",omitempty"`
+	UserId         string   `dynamo:",omitempty"`
+	SubmissionId   string   `dynamo:",omitempty"`
+	SongUrl        string   `dynamo:",omitempty"`
+	SpotifyTrackId string   `dynamo:",omitempty"`
+	Name           string   `dynamo:",omitempty"`
+	Artists        []string `dynamo:",omitempty"`
 }
 
 type Votes struct {
@@ -152,6 +155,8 @@ func (item *MxtpItem) toSong() (Song, error) {
 		SubmissionId:   item.SubmissionId,
 		SongUrl:        item.SongUrl,
 		SpotifyTrackId: item.SpotifyTrackId,
+		Name:           item.Name,
+		Artists:        item.Artists,
 	}, nil
 }
 
@@ -209,9 +214,23 @@ func New() (*DB, error) {
 	}, nil
 }
 
+func makeLeaguePK(leagueName string) (string, error) {
+	err := validateIds(leagueName)
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("league#%v", leagueName), nil
+}
+
 func (db *DB) GetLeague(leagueName string) (League, error) {
+	pk, err := makeLeaguePK(leagueName)
+	if err != nil {
+		return League{}, err
+	}
+
 	var items []MxtpItem
-	err := db.table.Get("PK", fmt.Sprintf("league#%v", leagueName)).
+	err = db.table.Get("PK", pk).
 		Order(dynamo.Descending).
 		Limit(3).
 		All(&items)
@@ -265,10 +284,44 @@ func (db *DB) GetLeague(leagueName string) (League, error) {
 	return league, nil
 }
 
+func makeSongKeys(leagueName, themeId, userId string) (pk, sk string, err error) {
+	err = validateIds(leagueName, themeId, userId)
+	if err != nil {
+		return "", "", nil
+	}
+
+	pk, err = makeThemeItemsPK(leagueName, themeId)
+	if err != nil {
+		return "", "", err
+	}
+
+	sk = fmt.Sprintf("song#%v", userId)
+	return pk, sk, err
+}
+
+func makeVotesKeys(leagueName, themeId, userId string) (pk, sk string, err error) {
+	err = validateIds(leagueName, themeId, userId)
+	if err != nil {
+		return "", "", nil
+	}
+
+	pk, err = makeThemeItemsPK(leagueName, themeId)
+	if err != nil {
+		return "", "", err
+	}
+
+	sk = fmt.Sprintf("votes#%v", userId)
+	return pk, sk, err
+}
+
 func (db *DB) GetSong(leagueName, themeId, userId string) (Song, error) {
+	pk, sk, err := makeSongKeys(leagueName, themeId, userId)
+	if err != nil {
+		return Song{}, err
+	}
 	var item MxtpItem
-	err := db.table.Get("PK", fmt.Sprintf("league#%v#theme#%v", leagueName, themeId)).
-		Range("SK", dynamo.Equal, fmt.Sprintf("song#%v", userId)).
+	err = db.table.Get("PK", pk).
+		Range("SK", dynamo.Equal, sk).
 		One(&item)
 
 	if err != nil {
@@ -283,12 +336,38 @@ func (db *DB) GetSong(leagueName, themeId, userId string) (Song, error) {
 	return song, nil
 }
 
+func validateIds(ids ...string) error {
+	var badIds []string
+	for _, id := range ids {
+		if strings.Contains(id, "#") {
+			badIds = append(badIds, id)
+		}
+	}
+
+	if len(badIds) == 0 {
+		return nil
+	}
+
+	return errors.New("Invalid ids: " + strings.Join(badIds, ","))
+}
+
+func makeThemeItemsPK(leagueName, themeId string) (string, error) {
+	err := validateIds(leagueName, themeId)
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("league#%v#theme#%v", leagueName, themeId), nil
+}
+
 func (db *DB) GetThemeItems(leagueName, themeId string) (ThemeItems, error) {
+	pk, err := makeThemeItemsPK(leagueName, themeId)
+	if err != nil {
+		return ThemeItems{}, err
+	}
+
 	var items []MxtpItem
-	err := db.table.Get("PK", fmt.Sprintf("league#%v#theme#%v", leagueName, themeId)).
-		// only Songs have SubmissionId, and the only other item that matches the UserId must be the user's Votes (if it exists)
-		// Filter("attribute_exists(SubmissionId) OR UserId = ?", userId).
-		// Order(dynamo.Descending).
+	err = db.table.Get("PK", pk).
 		All(&items)
 
 	if err != nil {
@@ -303,6 +382,7 @@ func (db *DB) GetThemeItems(leagueName, themeId string) (ThemeItems, error) {
 		return ThemeItems{}, nil
 	}
 
+	// try to parse items as songs until we can't anymore
 	songs := []Song{}
 	idx := 0
 	for idx < len(items) {
@@ -329,52 +409,36 @@ func (db *DB) GetThemeItems(leagueName, themeId string) (ThemeItems, error) {
 		Songs: songs,
 		Votes: votes,
 	}, nil
-
-	// try to parse the first item as Votes
-	// songs := []Song{}
-	// votes, err := items[0].toVotes()
-	// if err != nil {
-	// 	votes = Votes{}
-	// 	// try to parse the first item as Song
-	// 	var songItem MxtpItem
-	// 	songItem, items = items[0], items[1:]
-	// 	song, err := songItem.toSong()
-	// 	if err != nil {
-	// 		return []Song{}, Votes{}, errors.New("Failed to parse first Theme item as Votes or Song")
-	// 	}
-	// 	songs = append(songs, song)
-	// }
-
-	// // iterate through remaining songs
-	// for _, item := range items[1:] {
-	// 	song, err := item.toSong()
-	// 	if err != nil {
-	// 		fmt.Printf("WARNING: Failed to parse item as song (skipped): %+v\n", item)
-	// 		continue
-	// 	}
-	// 	songs = append(songs, song)
-	// }
-
-	// return songs, votes, nil
 }
 
-func (db *DB) UpdateSong(leagueName, themeId, userId, songUrl, submissionId, spotifyTrackId string) error {
+func (db *DB) UpdateSong(leagueName, themeId, userId, songUrl, submissionId, spotifyTrackId, songName string, songArtists []string) error {
+	pk, sk, err := makeSongKeys(leagueName, themeId, userId)
+	if err != nil {
+		return err
+	}
+
 	song := MxtpItem{
-		PK:             fmt.Sprintf("league#%v#theme#%v", leagueName, themeId),
-		SK:             fmt.Sprintf("song#%v", userId),
+		PK:             pk,
+		SK:             sk,
 		UserId:         userId,
 		SongUrl:        songUrl,
 		SubmissionId:   submissionId,
 		SpotifyTrackId: spotifyTrackId,
+		Name:           songName,
+		Artists:        songArtists,
 	}
 
 	return db.table.Put(song).Run()
 }
 
 func (db *DB) UpdateVotes(leagueName, themeId, userId string, submissionIds []string) error {
+	pk, sk, err := makeVotesKeys(leagueName, themeId, userId)
+	if err != nil {
+		return err
+	}
 	song := MxtpItem{
-		PK:            fmt.Sprintf("league#%v#theme#%v", leagueName, themeId),
-		SK:            fmt.Sprintf("votes#%v", userId),
+		PK:            pk,
+		SK:            sk,
 		UserId:        userId,
 		SubmissionIds: submissionIds,
 	}
@@ -382,10 +446,26 @@ func (db *DB) UpdateVotes(leagueName, themeId, userId string, submissionIds []st
 	return db.table.Put(song).Run()
 }
 
+func makeSpotifyTokenKeys(userId string) (pk, sk string, err error) {
+	err = validateIds(userId)
+	if err != nil {
+		return "", "", nil
+	}
+
+	pk = fmt.Sprintf("secret#%v", userId)
+	sk = fmt.Sprintf("spotify")
+	return pk, sk, err
+}
+
 func (db *DB) GetSpotifyToken(userId string) (*oauth2.Token, error) {
+	pk, sk, err := makeSpotifyTokenKeys(userId)
+	if err != nil {
+		return nil, err
+	}
+
 	var item MxtpItem
-	err := db.table.Get("PK", fmt.Sprintf("secret#%v", userId)).
-		Range("SK", dynamo.Equal, "spotify").
+	err = db.table.Get("PK", pk).
+		Range("SK", dynamo.Equal, sk).
 		One(&item)
 	if err != nil {
 		return nil, err
@@ -399,9 +479,14 @@ func (db *DB) GetSpotifyToken(userId string) (*oauth2.Token, error) {
 }
 
 func (db *DB) UpdateSpotifyToken(token *oauth2.Token, userId string) error {
+	pk, sk, err := makeSpotifyTokenKeys(userId)
+	if err != nil {
+		return err
+	}
+
 	tokenItem := MxtpItem{
-		PK:           fmt.Sprintf("secret#%v", userId),
-		SK:           "spotify",
+		PK:           pk,
+		SK:           sk,
 		AccessToken:  token.AccessToken,
 		TokenType:    token.TokenType,
 		RefreshToken: token.RefreshToken,
@@ -411,10 +496,26 @@ func (db *DB) UpdateSpotifyToken(token *oauth2.Token, userId string) error {
 	return db.table.Put(tokenItem).Run()
 }
 
+func makeUserStateKeys(state string) (pk, sk string, err error) {
+	err = validateIds(state)
+	if err != nil {
+		return "", "", nil
+	}
+
+	pk = fmt.Sprintf("state#%v", state)
+	sk = fmt.Sprintf("state")
+	return pk, sk, err
+}
+
 func (db *DB) GetUserFromState(state string) (string, error) {
+	pk, sk, err := makeUserStateKeys(state)
+	if err != nil {
+		return "", err
+	}
+
 	var item MxtpItem
-	err := db.table.Get("PK", fmt.Sprintf("state#%v", state)).
-		Range("SK", dynamo.Equal, "state").
+	err = db.table.Get("PK", pk).
+		Range("SK", dynamo.Equal, sk).
 		One(&item)
 	if err != nil {
 		return "", err
@@ -424,58 +525,16 @@ func (db *DB) GetUserFromState(state string) (string, error) {
 }
 
 func (db *DB) UpdateUserState(userId, state string) error {
+	pk, sk, err := makeUserStateKeys(state)
+	if err != nil {
+		return err
+	}
+
 	tokenItem := MxtpItem{
-		PK:     fmt.Sprintf("state#%v", state),
-		SK:     "state",
+		PK:     pk,
+		SK:     sk,
 		UserId: userId,
 	}
 
 	return db.table.Put(tokenItem).Run()
 }
-
-// func main() {
-// 	db, err := New()
-// 	if err != nil {
-// 		panic(err)
-// 	}
-
-// 	res1, err := db.GetLeague("devetry")
-// 	if err != nil {
-// 		panic(err)
-// 	}
-// 	fmt.Printf("%+v\n", res1)
-
-// 	res2, err := db.GetSong("devetry", "2020-05-18", "ted@devetry.com")
-// 	if err != nil {
-// 		panic(err)
-// 	}
-// 	fmt.Printf("%+v\n", res2)
-
-// 	items, err := db.GetThemeItems("devetry", "2020-05-04")
-// 	if err != nil {
-// 		panic(err)
-// 	}
-// 	fmt.Printf("%+v\n", items)
-
-// 	err = db.UpdateSong("devetry", "2020-05-18", "ted@devetry.com", "http://www.youtube.com/hello", uuid.New().String())
-// 	if err != nil {
-// 		panic(err)
-// 	}
-
-// 	res2, err = db.GetSong("devetry", "2020-05-18", "ted@devetry.com")
-// 	if err != nil {
-// 		panic(err)
-// 	}
-// 	fmt.Printf("%+v\n", res2)
-
-// 	err = db.UpdateVotes("devetry", "2020-05-04", "ted@devetry.com", []string{"qwerty"})
-// 	if err != nil {
-// 		panic(err)
-// 	}
-
-// 	items, err = db.GetThemeItems("devetry", "2020-05-04")
-// 	if err != nil {
-// 		panic(err)
-// 	}
-// 	fmt.Printf("%+v\n", items)
-// }

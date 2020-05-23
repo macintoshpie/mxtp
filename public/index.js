@@ -84,7 +84,7 @@ const renderCards = () => {
     state.VoteThemeSongs.forEach(sub => {
       const subLabel = document.createElement('label')
       subLabel.for = sub.SubmissionId
-      subLabel.innerText = sub.SongUrl
+      subLabel.innerText = sub.Name || sub.SongUrl
       voteThemeForm.appendChild(subLabel)
 
       const subInput = document.createElement('input')
@@ -166,7 +166,8 @@ const buttonLoading = async (btn, res) => {
   return res
 }
 
-const songRegex = /(http|https):\/\/open.spotify.com\/track\/.+/
+// TODO: allow youtube urls and do better matching
+const songRegex = /^(http|https):\/\/open.spotify.com\/track\/.+$/
 const sendSubmission = () => {
   let songUrl = document.getElementById('submit-theme-form-input').value
   const btn = document.getElementById('submit-theme-form-submit')
@@ -174,11 +175,10 @@ const sendSubmission = () => {
     buttonLoading(btn, updateSubmission(state.user, state.League.Name, state.SubmitTheme.Date, songUrl))
   } else {
     // this is bad and can break things
-    const originalText = btn.innerText
     btn.innerText = 'bad url'
     btn.classList.add('btn-error')
     setTimeout(() => {
-      btn.innerText = originalText
+      btn.innerText = 'submit'
       btn.classList.remove('btn-error')
     }, 2000)
   }

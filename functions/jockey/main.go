@@ -111,6 +111,22 @@ func authMiddleware(handler bouncer.ApiHandler) bouncer.ApiHandler {
 	}
 }
 
+const oneWeekTime = time.Hour * 24 * 7
+const themeDuration = oneWeekTime * 2
+
+// themeInSubmitPhase determines if a theme is in the song submission phase
+func themeInSubmitPhase(themeId string) bool {
+	themeStartDate, err := time.Parse("2006-01-02", themeId)
+	if err != nil {
+		return false
+	}
+
+	themeEndDate := themeStartDate.Add(themeDuration)
+	now := time.Now()
+	return (now.After(themeStartDate) || now.Equal(themeStartDate)) &&
+		(now.Before(themeEndDate) || now.Equal(themeEndDate))
+}
+
 func postSongsHandler(parameters map[string]string, request events.APIGatewayProxyRequest) *events.APIGatewayProxyResponse {
 	username := parameters["username"]
 	if username == "" {
@@ -127,6 +143,11 @@ func postSongsHandler(parameters map[string]string, request events.APIGatewayPro
 	if themeId == "" {
 		fmt.Println("ERROR: Parameter 'themeId' not found")
 		return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
+	}
+
+	// verify the song can still be updated
+	if !themeInSubmitPhase(themeId) {
+		return newMessageResponse(400, "Submission phase for theme is over").toAPIGatewayProxyResponse()
 	}
 
 	db, err := mxtpdb.New()
@@ -155,10 +176,41 @@ func postSongsHandler(parameters map[string]string, request events.APIGatewayPro
 		pathParts := strings.Split(parsedUrl.Path, "/")
 		if len(pathParts) > 0 {
 			song.SpotifyTrackId = pathParts[len(pathParts)-1]
+
+			// get track info from spotify
+			spotifyTrackId := spotify.ID(song.SpotifyTrackId)
+			client, err := NewClient(db, username)
+			if err != nil {
+				fmt.Println("ERROR: failed to initialize spotify client: ", err.Error())
+				return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
+			}
+			track, err := client.GetTrack(spotifyTrackId)
+			if err != nil {
+				if err != nil {
+					fmt.Println("ERROR: failed to get track: ", err.Error())
+					return newMessageResponse(400, "Failed to get spotify track id "+song.SpotifyTrackId).toAPIGatewayProxyResponse()
+				}
+			}
+
+			song.Name = track.Name
+			var artistNames []string
+			for _, artist := range track.Artists {
+				artistNames = append(artistNames, artist.Name)
+			}
+			song.Artists = artistNames
 		}
 	}
 
-	err = db.UpdateSong(leagueName, themeId, username, song.SongUrl, uuid.New().String(), song.SpotifyTrackId)
+	err = db.UpdateSong(
+		leagueName,
+		themeId,
+		username,
+		song.SongUrl,
+		uuid.New().String(),
+		song.SpotifyTrackId,
+		song.Name,
+		song.Artists,
+	)
 	if err != nil {
 		fmt.Println("ERROR: failed to put submission: ", err.Error())
 		return newMessageResponse(500, "Internal Server Error").toAPIGatewayProxyResponse()
